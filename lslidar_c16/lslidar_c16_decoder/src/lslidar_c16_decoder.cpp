@@ -167,10 +167,10 @@ void LslidarC16Decoder::publishPointCloud() {
     outMsg.header.stamp = static_cast<ros::Time>(sweep_start_time * 1e6);
   }
   else{
-		std::cout << "publish pointcloud sweep_start_time: " << sweep_start_time * 1e6 << std::endl;
-		std::cout << "publish first point stamp: " << sweep_data->scans[0].points[0].time << std::endl;
-		std::cout << "publish ros time now: " << ros::Time::now().toSec() << std::endl;
-    outMsg.header.stamp = static_cast<ros::Time>(sweep_data->scans[0].points[0].time);    //timestamp of the first scan receive from sweep topic
+		//std::cout << "publish pointcloud sweep_start_time: " << sweep_start_time * 1e6 << std::endl;
+		//std::cout << "publish first point stamp: " << sweep_data->scans[0].points[0].time << std::endl;
+		//std::cout << "publish ros time now: " << ros::Time::now().toSec() << std::endl;
+    outMsg.header.stamp = static_cast<ros::Time>(sweep_start_time);    //timestamp of the first scan receive from sweep topic
   }
   
 	int height;
@@ -205,7 +205,7 @@ void LslidarC16Decoder::publishPointCloud() {
     // seems to be corrupted based on the received data.
     // TODO: The two end points should be removed directly
     //    in the scans.
-
+		//std::cout << "size: " << scan.points.size() << std::endl;
     if (scan.points.size() == 0) continue;
     size_t j;
     for (j = 1; j < scan.points.size()-1; ++j) {
@@ -213,16 +213,17 @@ void LslidarC16Decoder::publishPointCloud() {
       {
           continue;
       }
-      x_vect.push_back(scan.points[j].x);
-      y_vect.push_back(scan.points[j].y);
-      z_vect.push_back(scan.points[j].z);
-      intensity_vect.push_back(scan.points[j].intensity);
-			time_offset_vect.push_back(scan.points[j].time);
+			//std::cout << "X: " << scan.points[j].x << std::endl;
+      x_vect[iter_number_of_points]=scan.points[j].x;
+			//std::cout << "Xv: " << x_vect[iter_number_of_points] << std::endl;
+      y_vect[iter_number_of_points]=scan.points[j].y;
+      z_vect[iter_number_of_points]=scan.points[j].z;
+      intensity_vect[iter_number_of_points]=scan.points[j].intensity;
+			time_offset_vect[iter_number_of_points]=scan.points[j].time;
      //++point_cloud->width;
 			iter_number_of_points+=1;
     }
   }
-
 	
 	/*data_->block_num = 0;
 	for (size_t i = 0; i < scanMsg->packets.size(); ++i)
@@ -265,42 +266,42 @@ void LslidarC16Decoder::publishPointCloud() {
   return;
 }
 
-// void LslidarC16Decoder::publishPointCloud() {
-//     pcl::PointCloud<pcl::PointXYZIT>::Ptr point_cloud(
-//                 new pcl::PointCloud<pcl::PointXYZIT>());
-//     point_cloud->header.stamp =
-//             pcl_conversions::toPCL(sweep_data->header).stamp;
-//     point_cloud->header.frame_id = frame_id;
-//     point_cloud->height = 1;
+/*void LslidarC16Decoder::publishPointCloud() {
+	pcl::PointCloud<pcl::PointXYZIT>::Ptr point_cloud(
+		         new pcl::PointCloud<pcl::PointXYZIT>());
+	point_cloud->header.stamp =
+		     pcl_conversions::toPCL(sweep_data->header).stamp;
+	point_cloud->header.frame_id = frame_id;
+	point_cloud->height = 1;
 
-//     for (size_t i = 0; i < 16; ++i) {
-//         const lslidar_c16_msgs::LslidarC16Scan& scan = sweep_data->scans[i];
-//         // The first and last point in each scan is ignored, which
-//         // seems to be corrupted based on the received data.
-//         // TODO: The two end points should be removed directly
-//         //    in the scans.
-//         if (scan.points.size() == 0) continue;
-//         size_t j;
-//         for (j = 1; j < scan.points.size()-1; ++j) {
+	for (size_t i = 0; i < 16; ++i) {
+		const lslidar_c16_msgs::LslidarC16Scan& scan = sweep_data->scans[i];
+		// The first and last point in each scan is ignored, which
+		// seems to be corrupted based on the received data.
+		// TODO: The two end points should be removed directly
+		//    in the scans.
+		if (scan.points.size() == 0) continue;
+		size_t j;
+		for (j = 1; j < scan.points.size()-1; ++j) {
 
-//             pcl::PointXYZIT point;
-//             point.x = scan.points[j].x;
-//             point.y = scan.points[j].y;
-//             point.z = scan.points[j].z;
-//             point.intensity = scan.points[j].intensity;
-//             point.timestamp = ros::Time::now();
-//             point_cloud->points.push_back(point);
-//             ++point_cloud->width;
-//         }
+			pcl::PointXYZIT point;
+			point.x = scan.points[j].x;
+			point.y = scan.points[j].y;
+			point.z = scan.points[j].z;
+			point.intensity = scan.points[j].intensity;
+			point.timestamp = scan.points[j].time;
+			point_cloud->points.push_back(point);
+			++point_cloud->width;
+		}
 
-//     }
+	}
 
-//     //  	if(point_cloud->width > 2000)
-//     {
-//         point_cloud_pub.publish(point_cloud);
-//     }
-//     return;
-// }
+	if(point_cloud->width > 2000)
+	{
+		point_cloud_pub.publish(point_cloud);
+	}
+	return;
+}*/
 
 void LslidarC16Decoder::publishChannelScan()
 {
@@ -582,11 +583,12 @@ void LslidarC16Decoder::packetCallback(
             end_fir_idx = FIRINGS_PER_PACKET;
             sweep_start_time = msg->stamp.toSec() +
                     FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1e-6;  // TODO Check why begin from the end of array
-						std::cout<< std::setprecision(10) << "time packet: " << msg->stamp.toSec() << std::endl;
-						std::cout<< std::setprecision(10) << "time first sweep packet: " << sweep_start_time << std::endl;
+						//std::cout<< std::setprecision(10) << "time packet: " << msg->stamp.toSec() << std::endl;
+						//std::cout<< std::setprecision(10) << "time first sweep packet: " << sweep_start_time << std::endl;
         }
     }
 
+    packet_start_time = sweep_start_time;
     for (size_t fir_idx = start_fir_idx; fir_idx < end_fir_idx; ++fir_idx) {
         for (size_t scan_idx = 0; scan_idx < SCANS_PER_FIRING; ++scan_idx) {
             // Check if the point is valid.
@@ -674,7 +676,7 @@ void LslidarC16Decoder::packetCallback(
       // Prepare the next revolution
       sweep_start_time = msg->stamp.toSec() + FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1e-6;
 
-      packet_start_time = 0.0;
+      packet_start_time = sweep_start_time;
       last_azimuth = firings[FIRINGS_PER_PACKET-1].firing_azimuth;
 
       start_fir_idx = end_fir_idx;
