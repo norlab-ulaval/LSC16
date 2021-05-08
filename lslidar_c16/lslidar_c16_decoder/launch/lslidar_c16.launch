@@ -1,7 +1,7 @@
 <launch>
 
   <node pkg="lslidar_c16_driver" type="lslidar_c16_driver_node" name="lslidar_c16_driver_node" output="screen">
-    <param name="lidar_ip" value="192.168.1.222"/>
+    <param name="lidar_ip" value="192.168.1.200"/>
     <param name="device_port" value="2368"/>
 	<param name="add_multicast" value="false"/>
 	<param name="group_ip" value="224.1.1.2"/>
