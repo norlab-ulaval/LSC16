@@ -29,6 +29,7 @@ LslidarC16Decoder::LslidarC16Decoder(
     is_first_sweep(true),
     last_azimuth(0.0),
     sweep_start_time(0.0),
+		sweep_start_time_nsec(0),
     // layer_num(8),
     packet_start_time(0.0),
     sweep_data(new lslidar_c16_msgs::LslidarC16Sweep()),
@@ -172,6 +173,8 @@ void LslidarC16Decoder::publishPointCloud() {
 		//std::cout << "publish ros time now: " << ros::Time::now().toSec() << std::endl;
     outMsg.header.stamp = static_cast<ros::Time>(sweep_start_time);    //timestamp of the first scan receive from sweep topic
   }
+
+	std::cout << std::setprecision(15) << "*********** time: "<< sweep_start_time << std::endl;
   
 	int height;
 	int width;
@@ -196,16 +199,16 @@ void LslidarC16Decoder::publishPointCloud() {
 	std::vector<float> y_vect(num_of_points);
 	std::vector<float> z_vect(num_of_points);
 	std::vector<float> intensity_vect(num_of_points);
-	std::vector<float> time_offset_vect(num_of_points);
+	std::vector<uint32_t> time_offset_vect(num_of_points);
 
 	int iter_number_of_points = 0;
 	for (size_t i = 0; i < 16; ++i) {
     const lslidar_c16_msgs::LslidarC16Scan& scan = sweep_data->scans[i];
+		//std::cout<< std::setprecision(15) << "  time received: " << scan.time << std::endl;
     // The first and last point in each scan is ignored, which
     // seems to be corrupted based on the received data.
     // TODO: The two end points should be removed directly
     //    in the scans.
-		//std::cout << "size: " << scan.points.size() << std::endl;
     if (scan.points.size() == 0) continue;
     size_t j;
     for (j = 1; j < scan.points.size()-1; ++j) {
@@ -220,8 +223,9 @@ void LslidarC16Decoder::publishPointCloud() {
       z_vect[iter_number_of_points]=scan.points[j].z;
       intensity_vect[iter_number_of_points]=scan.points[j].intensity;
 			time_offset_vect[iter_number_of_points]=scan.points[j].time;
+			//std::cout<< "point number: " << j << std::setprecision(15) << "  time: " << time_offset_vect[iter_number_of_points] << std::endl;
      //++point_cloud->width;
-			iter_number_of_points+=1;
+			iter_number_of_points++;
     }
   }
 	
@@ -246,7 +250,7 @@ void LslidarC16Decoder::publishPointCloud() {
 	sensor_msgs::PointCloud2Iterator<float> iter_y(outMsg, "y");
 	sensor_msgs::PointCloud2Iterator<float> iter_z(outMsg, "z");
 	sensor_msgs::PointCloud2Iterator<float> iter_i(outMsg, "intensity");
-	sensor_msgs::PointCloud2Iterator<float> iter_t(outMsg, "t");
+	sensor_msgs::PointCloud2Iterator<uint32_t> iter_t(outMsg, "t");
 
 
 	int index_in_vectors;
@@ -545,6 +549,7 @@ void LslidarC16Decoder::packetCallback(
         const lslidar_c16_msgs::LslidarC16PacketConstPtr& msg) {
     //  ROS_WARN("packetCallBack");
     // Convert the msg to the raw packet type.
+		//std::cout<< "hey" << std::endl;
     const RawPacket* raw_packet = (const RawPacket*) (&(msg->data[0]));
 
     // Check if the packet is valid
@@ -581,14 +586,20 @@ void LslidarC16Decoder::packetCallback(
             is_first_sweep = false;
             start_fir_idx = new_sweep_start;
             end_fir_idx = FIRINGS_PER_PACKET;
-            sweep_start_time = msg->stamp.toSec() +
-                    FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1e-6;  // TODO Check why begin from the end of array
-						//std::cout<< std::setprecision(10) << "time packet: " << msg->stamp.toSec() << std::endl;
-						//std::cout<< std::setprecision(10) << "time first sweep packet: " << sweep_start_time << std::endl;
+						sweep_start_time = msg->stamp.toSec() + FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1e-6;  // TODO Check why begin from the end of array
+						sweep_start_time_nsec = msg->stamp.toNSec() + uint32_t(FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1000);
+						
         }
     }
-
-    packet_start_time = sweep_start_time;
+		
+		uint32_t diff_time = msg->stamp.toNSec() - sweep_start_time_nsec;
+		std::cout<< std::setprecision(15) << "stamp packet: " << msg->stamp.toNSec() << std::endl;
+		std::cout<< std::setprecision(15) << "stamp sweep: " << sweep_start_time_nsec << std::endl;
+		std::cout<< std::setprecision(15) << "diff time packet: " << diff_time << std::endl;
+		packet_start_time = diff_time;
+		//std::cout<< std::setprecision(10) << "time packet: " << msg->stamp.toSec() << std::endl;
+		//std::cout<< std::setprecision(15) << "time first sweep packet: " << sweep_start_time << std::endl;
+  
     for (size_t fir_idx = start_fir_idx; fir_idx < end_fir_idx; ++fir_idx) {
         for (size_t scan_idx = 0; scan_idx < SCANS_PER_FIRING; ++scan_idx) {
             // Check if the point is valid.
@@ -619,13 +630,16 @@ void LslidarC16Decoder::packetCallback(
             double z_coord = z;
 
             // Compute the time of the point
-            double time = packet_start_time +
-                    FIRING_TOFFSET*fir_idx + DSR_TOFFSET*scan_idx;  //TODO change packet_start_time by the good one
+            uint32_t time = packet_start_time + uint32_t(FIRING_TOFFSET*fir_idx*1000 + DSR_TOFFSET*scan_idx*1000);  //TODO change packet_start_time by the good one
+						//std::cout<< "id: " << fir_idx << "  " << scan_idx << "  time packet: " << time << std::endl;
 
             // Remap the index of the scan
             int remapped_scan_idx = scan_idx%2 == 0 ? scan_idx/2 : scan_idx/2+8;
             sweep_data->scans[remapped_scan_idx].points.push_back(
                         lslidar_c16_msgs::LslidarC16Point());
+
+						//sweep_data->scans[remapped_scan_idx].time = msg->stamp.toSec() + FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1e-6;
+						//std::cout<< "  time scan: " << sweep_start_time << std::endl;
 
             lslidar_c16_msgs::LslidarC16Point& new_point =		// new_point 为push_back最后一个的引用
                     sweep_data->scans[remapped_scan_idx].points[
@@ -654,10 +668,10 @@ void LslidarC16Decoder::packetCallback(
 		  	sweep_data->header.stamp = ros::Time(sweep_start_time);
 			}
 			else{
-		  	sweep_data->header.stamp = ros::Time::now();
+		  	sweep_data->header.stamp = ros::Time(sweep_start_time);
 			}
 
-
+			//std::cout<< "ho"<<std::endl;
       sweep_pub.publish(sweep_data);
 
       if (publish_point_cloud){
@@ -675,8 +689,14 @@ void LslidarC16Decoder::packetCallback(
 
       // Prepare the next revolution
       sweep_start_time = msg->stamp.toSec() + FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1e-6;
+			sweep_start_time_nsec = msg->stamp.toNSec() + uint32_t(FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1000);
 
-      packet_start_time = sweep_start_time;
+      uint32_t diff_time = msg->stamp.toNSec() - sweep_start_time_nsec;
+			std::cout<< std::setprecision(15) << "stamp packet: " << msg->stamp.toNSec() << std::endl;
+			std::cout<< std::setprecision(15) << "stamp sweep: " << sweep_start_time_nsec << std::endl;
+			std::cout<< std::setprecision(15) << "diff time packet: " << diff_time << std::endl;
+
+			packet_start_time = diff_time;
       last_azimuth = firings[FIRINGS_PER_PACKET-1].firing_azimuth;
 
       start_fir_idx = end_fir_idx;
@@ -712,13 +732,17 @@ void LslidarC16Decoder::packetCallback(
             double z_coord = z;
 
             // Compute the time of the point
-            double time = packet_start_time +
-                    FIRING_TOFFSET*(fir_idx-start_fir_idx) + DSR_TOFFSET*scan_idx;
+            uint32_t time = packet_start_time + uint32_t(FIRING_TOFFSET*(fir_idx-start_fir_idx)*1000 + DSR_TOFFSET*scan_idx*1000);
+
+						//std::cout<< "id2: " << fir_idx << "  " << scan_idx << "  time packet: " << time << std::endl;
 
             // Remap the index of the scan
             int remapped_scan_idx = scan_idx%2 == 0 ? scan_idx/2 : scan_idx/2+8;
             sweep_data->scans[remapped_scan_idx].points.push_back(
                         lslidar_c16_msgs::LslidarC16Point());
+
+						//sweep_data->scans[remapped_scan_idx].time = msg->stamp.toSec() + FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1e-6;
+
             lslidar_c16_msgs::LslidarC16Point& new_point =
                     sweep_data->scans[remapped_scan_idx].points[
                     sweep_data->scans[remapped_scan_idx].points.size()-1];

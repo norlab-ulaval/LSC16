@@ -216,6 +216,7 @@ private:
     bool is_first_sweep;
     double last_azimuth;
     double sweep_start_time;
+    uint32_t sweep_start_time_nsec;
     double packet_start_time;
     int layer_num;
     Firing firings[FIRINGS_PER_PACKET];
