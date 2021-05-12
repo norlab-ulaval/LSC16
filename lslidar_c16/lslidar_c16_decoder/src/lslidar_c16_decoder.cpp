@@ -134,7 +134,7 @@ void LslidarC16Decoder::publishPointCloud() {
     outMsg.header.stamp = static_cast<ros::Time>(sweep_start_time * 1e6);
   }
   else{
-    outMsg.header.stamp = static_cast<ros::Time>(sweep_start_time);  //timestamp of the first scan receive from sweep topic
+    outMsg.header.stamp = static_cast<ros::Time>(sweep_start_time);    //timestamp of the first scan receive from sweep topic
   }
   
 	int height;
@@ -169,6 +169,7 @@ void LslidarC16Decoder::publishPointCloud() {
     // seems to be corrupted based on the received data.
     // TODO: The two end points should be removed directly
     //    in the scans.
+
     if (scan.points.size() == 0) continue;
     size_t j;
     for (j = 1; j < scan.points.size()-1; ++j) {
@@ -219,7 +220,8 @@ void LslidarC16Decoder::publishPointCloud() {
   return;
 }
 
-void LslidarC16Decoder::publishChannelScan()
+
+void LslidarC16Deoder::publishChannelScan()
 {
     multi_scan = lslidar_c16_msgs::LslidarC16LayerPtr(
                     new lslidar_c16_msgs::LslidarC16Layer());
@@ -488,6 +490,7 @@ void LslidarC16Decoder::packetCallback(
     // second sweep in order to find the 0 azimuth angle.
     size_t start_fir_idx = 0;
     size_t end_fir_idx = new_sweep_start;
+
     if (is_first_sweep && new_sweep_start == FIRINGS_PER_PACKET) {
 		  // The first sweep has not ended yet.
 		  return;
