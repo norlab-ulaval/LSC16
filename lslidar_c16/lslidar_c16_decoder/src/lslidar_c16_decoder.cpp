@@ -221,7 +221,7 @@ void LslidarC16Decoder::publishPointCloud() {
 }
 
 
-void LslidarC16Deoder::publishChannelScan()
+void LslidarC16Decoder::publishChannelScan()
 {
     multi_scan = lslidar_c16_msgs::LslidarC16LayerPtr(
                     new lslidar_c16_msgs::LslidarC16Layer());
