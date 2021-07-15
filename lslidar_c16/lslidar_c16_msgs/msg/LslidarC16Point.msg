@@ -1,5 +1,5 @@
 # Time when the point is captured
-float32 time
+uint32 time
 
 # Converted distance in the sensor frame
 float64 x

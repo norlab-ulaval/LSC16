@@ -29,8 +29,9 @@ LslidarC16Decoder::LslidarC16Decoder(
     is_first_sweep(true),
     last_azimuth(0.0),
     sweep_start_time(0.0),
+		sweep_start_time_nsec(0),
     // layer_num(8),
-    packet_start_time(0.0),
+    packet_start_time(0),
     sweep_data(new lslidar_c16_msgs::LslidarC16Sweep()),
     multi_scan(new lslidar_c16_msgs::LslidarC16Layer())
     {
@@ -125,86 +126,100 @@ bool LslidarC16Decoder::checkPacketValidity(const RawPacket* packet) {
 
 
 void LslidarC16Decoder::publishPointCloud() {
-//    VPointCloud::Ptr point_cloud(new VPointCloud());
-    pcl::PointCloud<pcl::PointXYZI>::Ptr point_cloud(new pcl::PointCloud<pcl::PointXYZI>);
-            // pcl_conversions::toPCL(sweep_data->header).stamp;
-    point_cloud->header.frame_id = frame_id;
-    point_cloud->height = 1;
 
-    for (size_t i = 0; i < 16; ++i) {
-        const lslidar_c16_msgs::LslidarC16Scan& scan = sweep_data->scans[i];
-        // The first and last point in each scan is ignored, which
-        // seems to be corrupted based on the received data.
-        // TODO: The two end points should be removed directly
-        //    in the scans.
-        double timestamp = ros::Time::now().toSec();
-        if (use_gps_ts){
-            point_cloud->header.stamp = static_cast<uint64_t>(sweep_start_time * 1e6);
-        }
-        else{
-            point_cloud->header.stamp = static_cast<uint64_t>(timestamp * 1e6);
-        }
+  sensor_msgs::PointCloud2 outMsg;
+  outMsg.header.frame_id = frame_id;		//frame_id
+	//timestamp of pointcloud
+	if (use_gps_ts){
+    outMsg.header.stamp = static_cast<ros::Time>(sweep_start_time * 1e6);
+  }
+  else{
+    outMsg.header.stamp = static_cast<ros::Time>(sweep_start_time);    //timestamp of the first scan receive from sweep topic
+  }
+  
+	int height;
+	int width;
+	bool is_dense;
 
-        if (scan.points.size() == 0) continue;
-        size_t j;
-        pcl::PointXYZI point;
-        for (j = 1; j < scan.points.size()-1; ++j) {
-            if ((scan.points[j].azimuth > angle3_disable_min) and (scan.points[j].azimuth < angle3_disable_max))
-            {
-                continue;
-            }
-            point.x = scan.points[j].x;
-            point.y = scan.points[j].y;
-            point.z = scan.points[j].z;
-            point.intensity = scan.points[j].intensity;
-            point_cloud->points.push_back(point);
-            ++point_cloud->width;
-        }
+	int num_of_points;
+	num_of_points=0;
+	for (size_t i = 0; i < 16; ++i) {
+    const lslidar_c16_msgs::LslidarC16Scan& scan = sweep_data->scans[i];
+		num_of_points += scan.points.size();
+	}
+
+	height = 16;
+	width = int(num_of_points/16);
+	is_dense = true;
+
+	outMsg.height = height;
+	outMsg.width = width;
+	outMsg.is_dense = is_dense;
+
+	std::vector<float> x_vect(num_of_points);
+	std::vector<float> y_vect(num_of_points);
+	std::vector<float> z_vect(num_of_points);
+	std::vector<float> intensity_vect(num_of_points);
+	std::vector<uint32_t> time_offset_vect(num_of_points);
+
+	int iter_number_of_points = 0;
+	for (size_t i = 0; i < 16; ++i) {
+    const lslidar_c16_msgs::LslidarC16Scan& scan = sweep_data->scans[i];
+    // The first and last point in each scan is ignored, which
+    // seems to be corrupted based on the received data.
+    // TODO: The two end points should be removed directly
+    //    in the scans.
+
+    if (scan.points.size() == 0) continue;
+    size_t j;
+    for (j = 1; j < scan.points.size()-1; ++j) {
+      if ((scan.points[j].azimuth > angle3_disable_min) and (scan.points[j].azimuth < angle3_disable_max))
+      {
+          continue;
+      }
+      x_vect[iter_number_of_points]=scan.points[j].x;
+      y_vect[iter_number_of_points]=scan.points[j].y;
+      z_vect[iter_number_of_points]=scan.points[j].z;
+      intensity_vect[iter_number_of_points]=scan.points[j].intensity;
+			time_offset_vect[iter_number_of_points]=scan.points[j].time;
+     //++point_cloud->width;
+			iter_number_of_points++;
     }
+  }
 
-    sensor_msgs::PointCloud2 pc_msg;
-    pcl::toROSMsg(*point_cloud, pc_msg);
-    point_cloud_pub.publish(pc_msg);
+	outMsg.is_bigendian = false;
 
-    return;
+	sensor_msgs::PointCloud2Modifier pcd_modifier(outMsg);
+	// this call also resizes the data structure according to the given width, height and fields
+	pcd_modifier.setPointCloud2Fields(5, "x", 1, sensor_msgs::PointField::FLOAT32,
+	                                     "y", 1, sensor_msgs::PointField::FLOAT32,
+	                                     "z", 1, sensor_msgs::PointField::FLOAT32,
+	                                     "intensity", 1, sensor_msgs::PointField::FLOAT32,
+	                                     "t", 1, sensor_msgs::PointField::UINT32);
+
+	sensor_msgs::PointCloud2Iterator<float> iter_x(outMsg, "x");
+	sensor_msgs::PointCloud2Iterator<float> iter_y(outMsg, "y");
+	sensor_msgs::PointCloud2Iterator<float> iter_z(outMsg, "z");
+	sensor_msgs::PointCloud2Iterator<float> iter_i(outMsg, "intensity");
+	sensor_msgs::PointCloud2Iterator<uint32_t> iter_t(outMsg, "t");
+
+
+	int index_in_vectors;
+	for (index_in_vectors = 0; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z, ++iter_i, ++iter_t, ++index_in_vectors)
+	{
+	    // copy the data
+	    *iter_x = x_vect[index_in_vectors];
+	    *iter_y = y_vect[index_in_vectors];
+	    *iter_z = z_vect[index_in_vectors];
+	    *iter_i = intensity_vect[index_in_vectors];
+	    *iter_t = time_offset_vect[index_in_vectors];
+	}
+
+	point_cloud_pub.publish(outMsg);
+
+  return;
 }
 
-// void LslidarC16Decoder::publishPointCloud() {
-//     pcl::PointCloud<pcl::PointXYZIT>::Ptr point_cloud(
-//                 new pcl::PointCloud<pcl::PointXYZIT>());
-//     point_cloud->header.stamp =
-//             pcl_conversions::toPCL(sweep_data->header).stamp;
-//     point_cloud->header.frame_id = frame_id;
-//     point_cloud->height = 1;
-
-//     for (size_t i = 0; i < 16; ++i) {
-//         const lslidar_c16_msgs::LslidarC16Scan& scan = sweep_data->scans[i];
-//         // The first and last point in each scan is ignored, which
-//         // seems to be corrupted based on the received data.
-//         // TODO: The two end points should be removed directly
-//         //    in the scans.
-//         if (scan.points.size() == 0) continue;
-//         size_t j;
-//         for (j = 1; j < scan.points.size()-1; ++j) {
-
-//             pcl::PointXYZIT point;
-//             point.x = scan.points[j].x;
-//             point.y = scan.points[j].y;
-//             point.z = scan.points[j].z;
-//             point.intensity = scan.points[j].intensity;
-//             point.timestamp = ros::Time::now();
-//             point_cloud->points.push_back(point);
-//             ++point_cloud->width;
-//         }
-
-//     }
-
-//     //  	if(point_cloud->width > 2000)
-//     {
-//         point_cloud_pub.publish(point_cloud);
-//     }
-//     return;
-// }
 
 void LslidarC16Decoder::publishChannelScan()
 {
@@ -475,20 +490,29 @@ void LslidarC16Decoder::packetCallback(
     // second sweep in order to find the 0 azimuth angle.
     size_t start_fir_idx = 0;
     size_t end_fir_idx = new_sweep_start;
-    if (is_first_sweep &&
-            new_sweep_start == FIRINGS_PER_PACKET) {
-        // The first sweep has not ended yet.
-        return;
-    } else {
-        if (is_first_sweep) {
-            is_first_sweep = false;
-            start_fir_idx = new_sweep_start;
-            end_fir_idx = FIRINGS_PER_PACKET;
-            sweep_start_time = msg->stamp.toSec() +
-                    FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1e-6;
-        }
-    }
 
+    if (is_first_sweep && new_sweep_start == FIRINGS_PER_PACKET) {
+		  // The first sweep has not ended yet.
+		  return;
+    } 
+		else {
+		  if (is_first_sweep) {
+		    is_first_sweep = false;
+				sweep_start_time = msg->stamp.toSec() + FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1e-6;
+				sweep_start_time_nsec = msg->stamp.toNSec() + (unsigned long)(FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1000);
+		    start_fir_idx = new_sweep_start;
+		    end_fir_idx = FIRINGS_PER_PACKET;
+				unsigned long diff_time = 0;
+				packet_start_time = uint32_t(diff_time);
+		  }
+			else {
+				// calculate the difference of time between new packet and first sweep timestamp
+				unsigned long diff_time = msg->stamp.toNSec() - sweep_start_time_nsec;
+				// put the offset to calculate timestamp of each point
+				packet_start_time = uint32_t(diff_time);		
+			}
+    }
+  
     for (size_t fir_idx = start_fir_idx; fir_idx < end_fir_idx; ++fir_idx) {
         for (size_t scan_idx = 0; scan_idx < SCANS_PER_FIRING; ++scan_idx) {
             // Check if the point is valid.
@@ -496,16 +520,8 @@ void LslidarC16Decoder::packetCallback(
 
             // Convert the point to xyz coordinate
             size_t table_idx = floor(firings[fir_idx].azimuth[scan_idx]*1000.0+0.5);
-            //cout << table_idx << endl;
             double cos_azimuth = cos_azimuth_table[table_idx];
             double sin_azimuth = sin_azimuth_table[table_idx];
-
-            //double x = firings[fir_idx].distance[scan_idx] *
-            //  cos_scan_altitude[scan_idx] * sin(firings[fir_idx].azimuth[scan_idx]);
-            //double y = firings[fir_idx].distance[scan_idx] *
-            //  cos_scan_altitude[scan_idx] * cos(firings[fir_idx].azimuth[scan_idx]);
-            //double z = firings[fir_idx].distance[scan_idx] *
-            //  sin_scan_altitude[scan_idx];
 
             double x = firings[fir_idx].distance[scan_idx] *
                     cos_scan_altitude[scan_idx] * sin_azimuth;
@@ -519,15 +535,14 @@ void LslidarC16Decoder::packetCallback(
             double z_coord = z;
 
             // Compute the time of the point
-            double time = packet_start_time +
-                    FIRING_TOFFSET*fir_idx + DSR_TOFFSET*scan_idx;
+            uint32_t time = packet_start_time + uint32_t(FIRING_TOFFSET*fir_idx*1000 + DSR_TOFFSET*scan_idx*1000);
 
             // Remap the index of the scan
             int remapped_scan_idx = scan_idx%2 == 0 ? scan_idx/2 : scan_idx/2+8;
             sweep_data->scans[remapped_scan_idx].points.push_back(
                         lslidar_c16_msgs::LslidarC16Point());
 
-            lslidar_c16_msgs::LslidarC16Point& new_point =		// new_point 为push_back最后一个的引用
+            lslidar_c16_msgs::LslidarC16Point& new_point =	
                     sweep_data->scans[remapped_scan_idx].points[
                     sweep_data->scans[remapped_scan_idx].points.size()-1];
 
@@ -542,105 +557,100 @@ void LslidarC16Decoder::packetCallback(
         }
     }
 
-    packet_start_time += FIRING_TOFFSET * (end_fir_idx-start_fir_idx);
-
     // A new sweep begins
     if (end_fir_idx != FIRINGS_PER_PACKET) {
-        //	ROS_WARN("A new sweep begins");
-        // Publish the last revolution
-        sweep_data->header.frame_id = "sweep";
+			//	ROS_WARN("A new sweep begins");
+			// Publish the last revolution
+			sweep_data->header.frame_id = "sweep";
 
-        if (use_gps_ts){
-            sweep_data->header.stamp = ros::Time(sweep_start_time);
+			if (use_gps_ts){
+		  	sweep_data->header.stamp = ros::Time(sweep_start_time);
+			}
+			else{
+		  	sweep_data->header.stamp = ros::Time(sweep_start_time);
+			}
+
+      sweep_pub.publish(sweep_data);
+
+      if (publish_point_cloud){
+				publishPointCloud();
+			}
+		  if (publish_scan){
+				publishScan();
+			}
+
+      sweep_data = lslidar_c16_msgs::LslidarC16SweepPtr(new lslidar_c16_msgs::LslidarC16Sweep());			
+
+      last_azimuth = firings[FIRINGS_PER_PACKET-1].firing_azimuth;
+
+			// Prepare the next revolution
+			// Timestamp based on the block before the new sweep
+
+			if(end_fir_idx-start_fir_idx>0)
+			{
+		  	sweep_start_time = msg->stamp.toSec() + FIRING_TOFFSET * (end_fir_idx-1-start_fir_idx) * 1e-6;
+				sweep_start_time_nsec = msg->stamp.toNSec() + (unsigned long)(FIRING_TOFFSET * (end_fir_idx-1-start_fir_idx) * 1000);
+			}
+			else
+			{
+				sweep_start_time = msg->stamp.toSec() + FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1e-6;
+				sweep_start_time_nsec = msg->stamp.toNSec() + (unsigned long)(FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1000);
+			}
+
+      start_fir_idx = end_fir_idx;
+      end_fir_idx = FIRINGS_PER_PACKET;
+
+			unsigned long diff_time = (unsigned long)(FIRING_TOFFSET * 10000);  //Factor 10000 and not 1000
+			packet_start_time = uint32_t(diff_time);
+	
+
+      for (size_t fir_idx = start_fir_idx; fir_idx < end_fir_idx; ++fir_idx) {
+        for (size_t scan_idx = 0; scan_idx < SCANS_PER_FIRING; ++scan_idx) {
+            // Check if the point is valid.
+            if (!isPointInRange(firings[fir_idx].distance[scan_idx])) continue;
+
+            // Convert the point to xyz coordinate
+            size_t table_idx = floor(firings[fir_idx].azimuth[scan_idx]*1000.0+0.5);
+            double cos_azimuth = cos_azimuth_table[table_idx];
+            double sin_azimuth = sin_azimuth_table[table_idx];
+            double x = firings[fir_idx].distance[scan_idx] *
+                    cos_scan_altitude[scan_idx] * sin_azimuth;
+            double y = firings[fir_idx].distance[scan_idx] *
+                    cos_scan_altitude[scan_idx] * cos_azimuth;
+            double z = firings[fir_idx].distance[scan_idx] *
+                    sin_scan_altitude[scan_idx];
+
+            double x_coord = y;
+            double y_coord = -x;
+            double z_coord = z;
+
+            // Compute the time of the point
+            uint32_t time = packet_start_time + uint32_t(FIRING_TOFFSET*(fir_idx-start_fir_idx)*1000 + DSR_TOFFSET*scan_idx*1000);
+
+            // Remap the index of the scan
+            int remapped_scan_idx = scan_idx%2 == 0 ? scan_idx/2 : scan_idx/2+8;
+            sweep_data->scans[remapped_scan_idx].points.push_back(
+                        lslidar_c16_msgs::LslidarC16Point());
+
+            lslidar_c16_msgs::LslidarC16Point& new_point =
+                    sweep_data->scans[remapped_scan_idx].points[
+                    sweep_data->scans[remapped_scan_idx].points.size()-1];
+
+            // Pack the data into point msg
+            new_point.time = time;
+            new_point.x = x_coord;
+            new_point.y = y_coord;
+            new_point.z = z_coord;
+            new_point.azimuth = firings[fir_idx].azimuth[scan_idx];
+            new_point.distance = firings[fir_idx].distance[scan_idx];
+            new_point.intensity = firings[fir_idx].intensity[scan_idx];
         }
-        else{
-            sweep_data->header.stamp = ros::Time::now();
-        }
+      }
 
-
-        sweep_pub.publish(sweep_data);
-
-        if (publish_point_cloud){
-			publishPointCloud();
-		}
-        if (publish_scan){
-			publishScan();
-           // publishChannelScan();
-		}
-       // else{
-        //    publishScan();
-       // }
-
-        sweep_data = lslidar_c16_msgs::LslidarC16SweepPtr(
-                    new lslidar_c16_msgs::LslidarC16Sweep());
-
-        // Prepare the next revolution
-        sweep_start_time = msg->stamp.toSec() +
-                FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1e-6;
-
-        packet_start_time = 0.0;
-        last_azimuth = firings[FIRINGS_PER_PACKET-1].firing_azimuth;
-
-        start_fir_idx = end_fir_idx;
-        end_fir_idx = FIRINGS_PER_PACKET;
-
-        for (size_t fir_idx = start_fir_idx; fir_idx < end_fir_idx; ++fir_idx) {
-            for (size_t scan_idx = 0; scan_idx < SCANS_PER_FIRING; ++scan_idx) {
-                // Check if the point is valid.
-                if (!isPointInRange(firings[fir_idx].distance[scan_idx])) continue;
-
-                // Convert the point to xyz coordinate
-                size_t table_idx = floor(firings[fir_idx].azimuth[scan_idx]*1000.0+0.5);
-                //cout << table_idx << endl;
-                double cos_azimuth = cos_azimuth_table[table_idx];
-                double sin_azimuth = sin_azimuth_table[table_idx];
-
-                //double x = firings[fir_idx].distance[scan_idx] *
-                //  cos_scan_altitude[scan_idx] * sin(firings[fir_idx].azimuth[scan_idx]);
-                //double y = firings[fir_idx].distance[scan_idx] *
-                //  cos_scan_altitude[scan_idx] * cos(firings[fir_idx].azimuth[scan_idx]);
-                //double z = firings[fir_idx].distance[scan_idx] *
-                //  sin_scan_altitude[scan_idx];
-
-                double x = firings[fir_idx].distance[scan_idx] *
-                        cos_scan_altitude[scan_idx] * sin_azimuth;
-                double y = firings[fir_idx].distance[scan_idx] *
-                        cos_scan_altitude[scan_idx] * cos_azimuth;
-                double z = firings[fir_idx].distance[scan_idx] *
-                        sin_scan_altitude[scan_idx];
-
-                double x_coord = y;
-                double y_coord = -x;
-                double z_coord = z;
-
-                // Compute the time of the point
-                double time = packet_start_time +
-                        FIRING_TOFFSET*(fir_idx-start_fir_idx) + DSR_TOFFSET*scan_idx;
-
-                // Remap the index of the scan
-                int remapped_scan_idx = scan_idx%2 == 0 ? scan_idx/2 : scan_idx/2+8;
-                sweep_data->scans[remapped_scan_idx].points.push_back(
-                            lslidar_c16_msgs::LslidarC16Point());
-                lslidar_c16_msgs::LslidarC16Point& new_point =
-                        sweep_data->scans[remapped_scan_idx].points[
-                        sweep_data->scans[remapped_scan_idx].points.size()-1];
-
-                // Pack the data into point msg
-                new_point.time = time;
-                new_point.x = x_coord;
-                new_point.y = y_coord;
-                new_point.z = z_coord;
-                new_point.azimuth = firings[fir_idx].azimuth[scan_idx];
-                new_point.distance = firings[fir_idx].distance[scan_idx];
-                new_point.intensity = firings[fir_idx].intensity[scan_idx];
-            }
-        }
-
-        packet_start_time += FIRING_TOFFSET * (end_fir_idx-start_fir_idx);
     }
     //  ROS_WARN("pack end");
     return;
-}
+	}
 
 } // end namespace lslidar_c16_decoder
 
