@@ -161,6 +161,7 @@ void LslidarC16Decoder::publishPointCloud() {
 	std::vector<float> z_vect(num_of_points);
 	std::vector<float> intensity_vect(num_of_points);
 	std::vector<uint32_t> time_offset_vect(num_of_points);
+	std::vector<uint32_t> ring_vect(num_of_points);
 
 	int iter_number_of_points = 0;
 	for (size_t i = 0; i < 16; ++i) {
@@ -181,31 +182,33 @@ void LslidarC16Decoder::publishPointCloud() {
       y_vect[iter_number_of_points]=scan.points[j].y;
       z_vect[iter_number_of_points]=scan.points[j].z;
       intensity_vect[iter_number_of_points]=scan.points[j].intensity;
-			time_offset_vect[iter_number_of_points]=scan.points[j].time;
+      time_offset_vect[iter_number_of_points]=scan.points[j].time;
+      ring_vect[iter_number_of_points] = i;
      //++point_cloud->width;
 			iter_number_of_points++;
     }
   }
 
 	outMsg.is_bigendian = false;
-
 	sensor_msgs::PointCloud2Modifier pcd_modifier(outMsg);
 	// this call also resizes the data structure according to the given width, height and fields
-	pcd_modifier.setPointCloud2Fields(5, "x", 1, sensor_msgs::PointField::FLOAT32,
+	pcd_modifier.setPointCloud2Fields(6, "x", 1, sensor_msgs::PointField::FLOAT32,
 	                                     "y", 1, sensor_msgs::PointField::FLOAT32,
 	                                     "z", 1, sensor_msgs::PointField::FLOAT32,
 	                                     "intensity", 1, sensor_msgs::PointField::FLOAT32,
-	                                     "t", 1, sensor_msgs::PointField::UINT32);
+	                                     "t", 1, sensor_msgs::PointField::UINT32,
+					     "ring", 1, sensor_msgs::PointField::UINT32);
 
 	sensor_msgs::PointCloud2Iterator<float> iter_x(outMsg, "x");
 	sensor_msgs::PointCloud2Iterator<float> iter_y(outMsg, "y");
 	sensor_msgs::PointCloud2Iterator<float> iter_z(outMsg, "z");
 	sensor_msgs::PointCloud2Iterator<float> iter_i(outMsg, "intensity");
 	sensor_msgs::PointCloud2Iterator<uint32_t> iter_t(outMsg, "t");
+	sensor_msgs::PointCloud2Iterator<uint32_t> iter_ring(outMsg, "ring");
 
 
 	int index_in_vectors;
-	for (index_in_vectors = 0; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z, ++iter_i, ++iter_t, ++index_in_vectors)
+	for (index_in_vectors = 0; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z, ++iter_i, ++iter_t, ++iter_ring, ++index_in_vectors)
 	{
 	    // copy the data
 	    *iter_x = x_vect[index_in_vectors];
@@ -213,6 +216,7 @@ void LslidarC16Decoder::publishPointCloud() {
 	    *iter_z = z_vect[index_in_vectors];
 	    *iter_i = intensity_vect[index_in_vectors];
 	    *iter_t = time_offset_vect[index_in_vectors];
+	    *iter_ring = ring_vect[index_in_vectors];
 	}
 
 	point_cloud_pub.publish(outMsg);

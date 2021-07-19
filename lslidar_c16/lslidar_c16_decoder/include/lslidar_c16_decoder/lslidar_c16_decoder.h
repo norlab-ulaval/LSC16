@@ -116,10 +116,11 @@ typedef struct{
     double intensity;
 }point_struct;
 
-struct PointXYZIT {
+struct PointXYZITR {
   PCL_ADD_POINT4D
   uint8_t intensity;
   double timestamp;
+  uint32_t ring;
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW  // make sure our new allocators are aligned
 } EIGEN_ALIGN16;
 // enforce SSE padding for correct memory alignment
@@ -243,14 +244,14 @@ private:
 
 typedef LslidarC16Decoder::LslidarC16DecoderPtr LslidarC16DecoderPtr;
 typedef LslidarC16Decoder::LslidarC16DecoderConstPtr LslidarC16DecoderConstPtr;
-typedef PointXYZIT VPoint;
+typedef PointXYZITR VPoint;
 typedef pcl::PointCloud<VPoint> VPointCloud;
 
 } // end namespace lslidar_c16_decoder
 
 
-POINT_CLOUD_REGISTER_POINT_STRUCT(lslidar_c16_decoder::PointXYZIT,
+POINT_CLOUD_REGISTER_POINT_STRUCT(lslidar_c16_decoder::PointXYZITR,
                                   (float, x, x)(float, y, y)(float, z, z)(
                                       uint8_t, intensity,
-                                      intensity)(double, timestamp, timestamp))
+                                      intensity)(double, timestamp, timestamp)(uint32_t, ring, ring))
 #endif
