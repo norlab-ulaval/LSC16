@@ -236,7 +236,8 @@ int LslidarC16Driver::getPacket(
     // estimate when the scan occurred.
     double time2 = ros::Time::now().toSec();
 //    packet->stamp = ros::Time((time2 + time1) / 2.0);
-    packet->stamp = this->timeStamp;
+    //packet->stamp = this->timeStamp;
+		packet->stamp = ros::Time::now();
     return 0;
 }
 

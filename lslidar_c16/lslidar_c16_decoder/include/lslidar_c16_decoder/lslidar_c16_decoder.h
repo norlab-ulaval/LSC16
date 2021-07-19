@@ -33,6 +33,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl_ros/point_cloud.h>
 #include <pcl/point_types.h>
+#include <sensor_msgs/point_cloud2_iterator.h>
 
 #include <lslidar_c16_msgs/LslidarC16Packet.h>
 #include <lslidar_c16_msgs/LslidarC16Point.h>
@@ -215,7 +216,8 @@ private:
     bool is_first_sweep;
     double last_azimuth;
     double sweep_start_time;
-    double packet_start_time;
+    unsigned long sweep_start_time_nsec;
+    uint32_t packet_start_time;
     int layer_num;
     Firing firings[FIRINGS_PER_PACKET];
 
