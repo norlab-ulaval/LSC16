@@ -16,91 +16,101 @@
  */
 
 #include <lslidar_c16_decoder/lslidar_c16_decoder.h>
-#include <std_msgs/Int8.h>
+#include <std_msgs/msg/int8.hpp>
 
 using namespace std;
 
 namespace lslidar_c16_decoder {
-LslidarC16Decoder::LslidarC16Decoder(
-        ros::NodeHandle& n, ros::NodeHandle& pn):
-    nh(n),
-    pnh(pn),
+LslidarC16Decoder::LslidarC16Decoder(std::shared_ptr<rclcpp::Node> node):
+    node(node),
     publish_point_cloud(true),
     is_first_sweep(true),
     last_azimuth(0.0),
     sweep_start_time(0.0),
 		sweep_start_time_nsec(0),
     // layer_num(8),
-    packet_start_time(0),
-    sweep_data(new lslidar_c16_msgs::LslidarC16Sweep()),
-    multi_scan(new lslidar_c16_msgs::LslidarC16Layer())
+    packet_start_time(0)
     {
     return;
 }
 
 bool LslidarC16Decoder::loadParameters() {
-    pnh.param<int>("point_num", point_num, 1000);
-    pnh.param<int>("channel_num", layer_num, 8);
-    pnh.param<double>("min_range", min_range, 0.5);
-    pnh.param<double>("max_range", max_range, 100.0);
-    pnh.param<double>("angle_disable_min", angle_disable_min,-1);
-    pnh.param<double>("angle_disable_max", angle_disable_max, -1);
-    pnh.param<double>("angle3_disable_min", angle3_disable_min, -1);
-    pnh.param<double>("angle3_disable_max", angle3_disable_max, -1);
+    node->declare_parameter<int>("point_num", 1000);
+    node->get_parameter("point_num", point_num);
+    node->declare_parameter<int>("channel_num", 8);
+    node->get_parameter("channel_num", layer_num);
+    node->declare_parameter<double>("min_range", 0.5);
+    node->get_parameter("min_range", min_range);
+    node->declare_parameter<double>("max_range", 100.0);
+    node->get_parameter("max_range", max_range);
+    node->declare_parameter<double>("angle_disable_min", -1);
+    node->get_parameter("angle_disable_min", angle_disable_min);
+    node->declare_parameter<double>("angle_disable_max", -1);
+    node->get_parameter("angle_disable_max", angle_disable_max);
+    node->declare_parameter<double>("angle3_disable_min", -1);
+    node->get_parameter("angle3_disable_min", angle3_disable_min);
+    node->declare_parameter<double>("angle3_disable_max", -1);
+    node->get_parameter("angle3_disable_max", angle3_disable_max);
     double tmp_min, tmp_max;
-    ROS_WARN("discard Point cloud angle from %2.2f to %2.2f", angle3_disable_min, angle3_disable_max);
+    RCLCPP_WARN(node->get_logger(), "discard Point cloud angle from %2.2f to %2.2f", angle3_disable_min, angle3_disable_max);
     tmp_min = 2*M_PI - angle3_disable_max;
     tmp_max = 2*M_PI - angle3_disable_min;
     angle3_disable_min = tmp_min;
     angle3_disable_max = tmp_max;
-    ROS_WARN("switch angle from %2.2f to %2.2f in left hand rule", angle3_disable_min, angle3_disable_max);
-    pnh.param<double>("frequency", frequency, 20.0);
-    pnh.param<bool>("publish_point_cloud", publish_point_cloud, true);
-    pnh.param<bool>("publish_scan", publish_scan, false);
-    pnh.param<bool>("apollo_interface", apollo_interface, false);
+    RCLCPP_WARN(node->get_logger(), "switch angle from %2.2f to %2.2f in left hand rule", angle3_disable_min, angle3_disable_max);
+    node->declare_parameter<double>("frequency", 20.0);
+    node->get_parameter("frequency", frequency);
+    node->declare_parameter<bool>("publish_point_cloud", true);
+    node->get_parameter("publish_point_cloud", publish_point_cloud);
+    node->declare_parameter<bool>("publish_scan", false);
+    node->get_parameter("publish_scan", publish_scan);
+    node->declare_parameter<bool>("apollo_interface", false);
+    node->get_parameter("apollo_interface", apollo_interface);
     //pnh.param<string>("fixed_frame_id", fixed_frame_id, "map");
-    pnh.param<string>("frame_id", frame_id, "lslidar");
+    node->declare_parameter<std::string>("frame_id", "lslidar");
+    node->get_parameter("frame_id", frame_id);
 
-    pnh.param<bool>("use_gps_ts", use_gps_ts, false);
-    ROS_WARN("Using GPS timestamp or not %d", use_gps_ts);
+    node->declare_parameter<bool>("use_gps_ts", false);
+    node->get_parameter("use_gps_ts", use_gps_ts);
+    RCLCPP_WARN(node->get_logger(), "Using GPS timestamp or not %d", use_gps_ts);
     angle_base = M_PI*2 / point_num;
 
     if (apollo_interface)
-        ROS_WARN("This is apollo interface mode");
+        RCLCPP_WARN(node->get_logger(), "This is apollo interface mode");
     return true;
 }
 
 bool LslidarC16Decoder::createRosIO() {
-    packet_sub = nh.subscribe<lslidar_c16_msgs::LslidarC16Packet>(
-                "lslidar_packet", 100, &LslidarC16Decoder::packetCallback, this);
-    layer_sub = nh.subscribe(
-                "layer_num", 100, &LslidarC16Decoder::layerCallback, this);
-    sweep_pub = nh.advertise<lslidar_c16_msgs::LslidarC16Sweep>(
+    packet_sub = node->create_subscription<lslidar_c16_msgs::msg::LslidarC16Packet>(
+                "lslidar_packet", 100, std::bind(&LslidarC16Decoder::packetCallback, this, std::placeholders::_1));
+    layer_sub = node->create_subscription<std_msgs::msg::Int8>(
+                "layer_num", 100, std::bind(&LslidarC16Decoder::layerCallback, this, std::placeholders::_1));
+    sweep_pub = node->create_publisher<lslidar_c16_msgs::msg::LslidarC16Sweep>(
                 "lslidar_sweep", 10);
-    point_cloud_pub = nh.advertise<sensor_msgs::PointCloud2>(
+    point_cloud_pub = node->create_publisher<sensor_msgs::msg::PointCloud2>(
                 "lslidar_point_cloud", 10);
-    scan_pub = nh.advertise<sensor_msgs::LaserScan>(
+    scan_pub = node->create_publisher<sensor_msgs::msg::LaserScan>(
                 "scan", 100);
-    channel_scan_pub = nh.advertise<lslidar_c16_msgs::LslidarC16Layer>(
+    channel_scan_pub = node->create_publisher<lslidar_c16_msgs::msg::LslidarC16Layer>(
                 "scan_channel", 100);
     return true;
 }
 
 bool LslidarC16Decoder::initialize() {
     if (!loadParameters()) {
-        ROS_ERROR("Cannot load all required parameters...");
+        RCLCPP_ERROR(node->get_logger(), "Cannot load all required parameters...");
         return false;
     }
 
     if (!createRosIO()) {
-        ROS_ERROR("Cannot create ROS I/O...");
+        RCLCPP_ERROR(node->get_logger(), "Cannot create ROS I/O...");
         return false;
     }
 
     // Fill in the altitude for each scan.
     for (size_t scan_idx = 0; scan_idx < 16; ++scan_idx) {
         size_t remapped_scan_idx = scan_idx%2 == 0 ? scan_idx/2 : scan_idx/2+8;
-        sweep_data->scans[remapped_scan_idx].altitude = scan_altitude[scan_idx];
+        sweep_data.scans[remapped_scan_idx].altitude = scan_altitude[scan_idx];
     }
 
     // Create the sin and cos table for different azimuth values.
@@ -116,7 +126,7 @@ bool LslidarC16Decoder::initialize() {
 bool LslidarC16Decoder::checkPacketValidity(const RawPacket* packet) {
     for (size_t blk_idx = 0; blk_idx < BLOCKS_PER_PACKET; ++blk_idx) {
         if (packet->blocks[blk_idx].header != UPPER_BANK) {
-            //ROS_WARN("Skip invalid LS-16 packet: block %lu header is %x",
+            //RCLCPP_WARN(node->get_logger(), "Skip invalid LS-16 packet: block %lu header is %x",
                     //blk_idx, packet->blocks[blk_idx].header);
             return false;
         }
@@ -127,14 +137,14 @@ bool LslidarC16Decoder::checkPacketValidity(const RawPacket* packet) {
 
 void LslidarC16Decoder::publishPointCloud() {
 
-  sensor_msgs::PointCloud2 outMsg;
+  sensor_msgs::msg::PointCloud2 outMsg;
   outMsg.header.frame_id = frame_id;		//frame_id
 	//timestamp of pointcloud
 	if (use_gps_ts){
-    outMsg.header.stamp = static_cast<ros::Time>(sweep_start_time * 1e6);
+    outMsg.header.stamp = static_cast<rclcpp::Time>(sweep_start_time * 1e6);
   }
   else{
-    outMsg.header.stamp = static_cast<ros::Time>(sweep_start_time);    //timestamp of the first scan receive from sweep topic
+    outMsg.header.stamp = static_cast<rclcpp::Time>(sweep_start_time);    //timestamp of the first scan receive from sweep topic
   }
   
 	int height;
@@ -144,7 +154,7 @@ void LslidarC16Decoder::publishPointCloud() {
 	int num_of_points;
 	num_of_points=0;
 	for (size_t i = 0; i < 16; ++i) {
-    const lslidar_c16_msgs::LslidarC16Scan& scan = sweep_data->scans[i];
+    const lslidar_c16_msgs::msg::LslidarC16Scan& scan = sweep_data.scans[i];
 		num_of_points += scan.points.size();
 	}
 
@@ -165,7 +175,7 @@ void LslidarC16Decoder::publishPointCloud() {
 
 	int iter_number_of_points = 0;
 	for (size_t i = 0; i < 16; ++i) {
-    const lslidar_c16_msgs::LslidarC16Scan& scan = sweep_data->scans[i];
+    const lslidar_c16_msgs::msg::LslidarC16Scan& scan = sweep_data.scans[i];
     // The first and last point in each scan is ignored, which
     // seems to be corrupted based on the received data.
     // TODO: The two end points should be removed directly
@@ -192,12 +202,12 @@ void LslidarC16Decoder::publishPointCloud() {
 	outMsg.is_bigendian = false;
 	sensor_msgs::PointCloud2Modifier pcd_modifier(outMsg);
 	// this call also resizes the data structure according to the given width, height and fields
-	pcd_modifier.setPointCloud2Fields(6, "x", 1, sensor_msgs::PointField::FLOAT32,
-	                                     "y", 1, sensor_msgs::PointField::FLOAT32,
-	                                     "z", 1, sensor_msgs::PointField::FLOAT32,
-	                                     "intensity", 1, sensor_msgs::PointField::FLOAT32,
-	                                     "t", 1, sensor_msgs::PointField::UINT32,
-					     "ring", 1, sensor_msgs::PointField::UINT32);
+	pcd_modifier.setPointCloud2Fields(6, "x", 1, sensor_msgs::msg::PointField::FLOAT32,
+	                                     "y", 1, sensor_msgs::msg::PointField::FLOAT32,
+	                                     "z", 1, sensor_msgs::msg::PointField::FLOAT32,
+	                                     "intensity", 1, sensor_msgs::msg::PointField::FLOAT32,
+	                                     "t", 1, sensor_msgs::msg::PointField::UINT32,
+					     "ring", 1, sensor_msgs::msg::PointField::UINT32);
 
 	sensor_msgs::PointCloud2Iterator<float> iter_x(outMsg, "x");
 	sensor_msgs::PointCloud2Iterator<float> iter_y(outMsg, "y");
@@ -219,7 +229,7 @@ void LslidarC16Decoder::publishPointCloud() {
 	    *iter_ring = ring_vect[index_in_vectors];
 	}
 
-	point_cloud_pub.publish(outMsg);
+	point_cloud_pub->publish(outMsg);
 
   return;
 }
@@ -227,20 +237,19 @@ void LslidarC16Decoder::publishPointCloud() {
 
 void LslidarC16Decoder::publishChannelScan()
 {
-    multi_scan = lslidar_c16_msgs::LslidarC16LayerPtr(
-                    new lslidar_c16_msgs::LslidarC16Layer());
+    multi_scan = lslidar_c16_msgs::msg::LslidarC16Layer();
     // lslidar_c16_msgs::LslidarC16Layer multi_scan(new lslidar_c16_msgs::LslidarC16Layer);
-    sensor_msgs::LaserScan scan;
+    sensor_msgs::msg::LaserScan scan;
 
     int layer_num_local = layer_num;
-    ROS_INFO_ONCE("default channel is %d", layer_num_local );
-    if(sweep_data->scans[layer_num_local].points.size() <= 1)
+    RCLCPP_INFO_ONCE(node->get_logger(), "default channel is %d", layer_num_local );
+    if(sweep_data.scans[layer_num_local].points.size() <= 1)
         return;
 
     for (uint16_t j=0; j<16; j++)
     {
     scan.header.frame_id = frame_id;
-    scan.header.stamp = sweep_data->header.stamp;
+    scan.header.stamp = sweep_data.header.stamp;
 
     scan.angle_min = 0.0;
     scan.angle_max = 2.0*M_PI;
@@ -255,9 +264,9 @@ void LslidarC16Decoder::publishChannelScan()
     scan.intensities.reserve(point_num);
     scan.intensities.assign(point_num, std::numeric_limits<float>::infinity());
 
-    for(uint16_t i = 0; i < sweep_data->scans[j].points.size(); i++)
+    for(uint16_t i = 0; i < sweep_data.scans[j].points.size(); i++)
     {
-        double point_azimuth = sweep_data->scans[j].points[i].azimuth;
+        double point_azimuth = sweep_data.scans[j].points[i].azimuth;
         int point_idx = point_azimuth / angle_base;
         if (fmod(point_azimuth, angle_base) > (angle_base/2.0))
         {
@@ -269,8 +278,8 @@ void LslidarC16Decoder::publishChannelScan()
         if (point_idx < 0)
             point_idx = point_num - 1;
 
-        scan.ranges[point_num - 1-point_idx] = sweep_data->scans[j].points[i].distance;
-        scan.intensities[point_num - 1-point_idx] = sweep_data->scans[j].points[i].intensity;
+        scan.ranges[point_num - 1-point_idx] = sweep_data.scans[j].points[i].distance;
+        scan.intensities[point_num - 1-point_idx] = sweep_data.scans[j].points[i].intensity;
     }
 
     for (int i = point_num - 1; i >= 0; i--)
@@ -279,43 +288,43 @@ void LslidarC16Decoder::publishChannelScan()
 			scan.ranges[i] = std::numeric_limits<float>::infinity();
 	}
 
-        multi_scan->scan_channel[j] = scan;
+        multi_scan.scan_channel[j] = scan;
         if (j == layer_num_local)
-            scan_pub.publish(scan);
+            scan_pub->publish(scan);
     }
 
-    channel_scan_pub.publish(multi_scan);  
+    channel_scan_pub->publish(multi_scan);
 
 }
 
 
 void LslidarC16Decoder::publishScan()
 {
-    sensor_msgs::LaserScan::Ptr scan(new sensor_msgs::LaserScan);
+    sensor_msgs::msg::LaserScan scan;
     int layer_num_local = layer_num;
-    ROS_INFO_ONCE("default channel is %d", layer_num_local);
-    if(sweep_data->scans[layer_num_local].points.size() <= 1)
+    RCLCPP_INFO_ONCE(node->get_logger(), "default channel is %d", layer_num_local);
+    if(sweep_data.scans[layer_num_local].points.size() <= 1)
         return;
 
-    scan->header.frame_id = frame_id;
-    scan->header.stamp = sweep_data->header.stamp;
+    scan.header.frame_id = frame_id;
+    scan.header.stamp = sweep_data.header.stamp;
 
-    scan->angle_min = 0.0;
-    scan->angle_max = 2.0*M_PI;
-    scan->angle_increment = (scan->angle_max - scan->angle_min)/point_num;
+    scan.angle_min = 0.0;
+    scan.angle_max = 2.0*M_PI;
+    scan.angle_increment = (scan.angle_max - scan.angle_min)/point_num;
 
-    //	scan->time_increment = motor_speed_/1e8;
-    scan->range_min = min_range;
-    scan->range_max = max_range;
-    scan->ranges.reserve(point_num);
-    scan->ranges.assign(point_num, std::numeric_limits<float>::infinity());
+    //	scan.time_increment = motor_speed_/1e8;
+    scan.range_min = min_range;
+    scan.range_max = max_range;
+    scan.ranges.reserve(point_num);
+    scan.ranges.assign(point_num, std::numeric_limits<float>::infinity());
 
-    scan->intensities.reserve(point_num);
-    scan->intensities.assign(point_num, std::numeric_limits<float>::infinity());
+    scan.intensities.reserve(point_num);
+    scan.intensities.assign(point_num, std::numeric_limits<float>::infinity());
 
-    for(uint16_t i = 0; i < sweep_data->scans[layer_num_local].points.size(); i++)
+    for(uint16_t i = 0; i < sweep_data.scans[layer_num_local].points.size(); i++)
     {
-        double point_azimuth = sweep_data->scans[layer_num_local].points[i].azimuth;
+        double point_azimuth = sweep_data.scans[layer_num_local].points[i].azimuth;
         int point_idx = point_azimuth / angle_base;
 		//printf("deg %3.2f ,point idx %d, \t", point_azimuth*RAD_TO_DEG, point_idx);
         if (fmod(point_azimuth, angle_base) > (angle_base/2.0))
@@ -329,17 +338,17 @@ void LslidarC16Decoder::publishScan()
         if (point_idx < 0)
             point_idx = point_num - 1;
 
-        scan->ranges[point_num - 1-point_idx] = sweep_data->scans[layer_num_local].points[i].distance;
-        scan->intensities[point_num - 1-point_idx] = sweep_data->scans[layer_num_local].points[i].intensity;
+        scan.ranges[point_num - 1-point_idx] = sweep_data.scans[layer_num_local].points[i].distance;
+        scan.intensities[point_num - 1-point_idx] = sweep_data.scans[layer_num_local].points[i].intensity;
     }
 
     for (int i = point_num - 1; i >= 0; i--)
 	{
 		if((i >= angle_disable_min*point_num/360) && (i < angle_disable_max*point_num/360))
-			scan->ranges[i] = std::numeric_limits<float>::infinity();
+			scan.ranges[i] = std::numeric_limits<float>::infinity();
 	}
 
-    scan_pub.publish(scan);
+    scan_pub->publish(scan);
 
 }
 
@@ -441,33 +450,33 @@ void LslidarC16Decoder::decodePacket(const RawPacket* packet) {
     }
     // for (size_t fir_idx = 0; fir_idx < FIRINGS_PER_PACKET; ++fir_idx)
     //{
-    //	ROS_WARN("[%f %f %f]", firings[fir_idx].azimuth[0], firings[fir_idx].distance[0], firings[fir_idx].intensity[0]);
+    //	RCLCPP_WARN(node->get_logger(), "[%f %f %f]", firings[fir_idx].azimuth[0], firings[fir_idx].distance[0], firings[fir_idx].intensity[0]);
     //}
     return;
 }
 
-void LslidarC16Decoder::layerCallback(const std_msgs::Int8Ptr& msg){
-    int num = msg->data;
+void LslidarC16Decoder::layerCallback(const std_msgs::msg::Int8& msg){
+    int num = msg.data;
     if (num < 0)
     {
         num = 0;
-        ROS_WARN("layer num outside of the index, select layer 0 instead!");
+        RCLCPP_WARN(node->get_logger(), "layer num outside of the index, select layer 0 instead!");
     }
     else if (num > 15)
     {
         num = 15;
-        ROS_WARN("layer num outside of the index, select layer 15 instead!");
+        RCLCPP_WARN(node->get_logger(), "layer num outside of the index, select layer 15 instead!");
     }
-    ROS_INFO("select layer num: %d", msg->data);
+    RCLCPP_INFO(node->get_logger(), "select layer num: %d", msg.data);
     layer_num = num;
     return;
 }
 
 void LslidarC16Decoder::packetCallback(
-        const lslidar_c16_msgs::LslidarC16PacketConstPtr& msg) {
-    //  ROS_WARN("packetCallBack");
+        const lslidar_c16_msgs::msg::LslidarC16Packet& msg) {
+    //  RCLCPP_WARN(node->get_logger(), "packetCallBack");
     // Convert the msg to the raw packet type.
-    const RawPacket* raw_packet = (const RawPacket*) (&(msg->data[0]));
+    const RawPacket* raw_packet = (const RawPacket*) (&(msg.data[0]));
 
     // Check if the packet is valid
     if (!checkPacketValidity(raw_packet)) return;
@@ -487,7 +496,7 @@ void LslidarC16Decoder::packetCallback(
             ++new_sweep_start;
         }
     } while (new_sweep_start < FIRINGS_PER_PACKET);
-    //  ROS_WARN("new_sweep_start %d", new_sweep_start);
+    //  RCLCPP_WARN(node->get_logger(), "new_sweep_start %d", new_sweep_start);
 
     // The first sweep may not be complete. So, the firings with
     // the first sweep will be discarded. We will wait for the
@@ -502,8 +511,8 @@ void LslidarC16Decoder::packetCallback(
 		else {
 		  if (is_first_sweep) {
 		    is_first_sweep = false;
-				sweep_start_time = msg->stamp.toSec() + FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1e-6;
-				sweep_start_time_nsec = msg->stamp.toNSec() + (unsigned long)(FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1000);
+				sweep_start_time = rclcpp::Time(msg.stamp).seconds() + FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1e-6;
+				sweep_start_time_nsec = rclcpp::Time(msg.stamp).nanoseconds() + (unsigned long)(FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1000);
 		    start_fir_idx = new_sweep_start;
 		    end_fir_idx = FIRINGS_PER_PACKET;
 				unsigned long diff_time = 0;
@@ -511,7 +520,7 @@ void LslidarC16Decoder::packetCallback(
 		  }
 			else {
 				// calculate the difference of time between new packet and first sweep timestamp
-				unsigned long diff_time = msg->stamp.toNSec() - sweep_start_time_nsec;
+				unsigned long diff_time = rclcpp::Time(msg.stamp).nanoseconds() - sweep_start_time_nsec;
 				// put the offset to calculate timestamp of each point
 				packet_start_time = uint32_t(diff_time);		
 			}
@@ -543,12 +552,12 @@ void LslidarC16Decoder::packetCallback(
 
             // Remap the index of the scan
             int remapped_scan_idx = scan_idx%2 == 0 ? scan_idx/2 : scan_idx/2+8;
-            sweep_data->scans[remapped_scan_idx].points.push_back(
-                        lslidar_c16_msgs::LslidarC16Point());
+            sweep_data.scans[remapped_scan_idx].points.push_back(
+                        lslidar_c16_msgs::msg::LslidarC16Point());
 
-            lslidar_c16_msgs::LslidarC16Point& new_point =	
-                    sweep_data->scans[remapped_scan_idx].points[
-                    sweep_data->scans[remapped_scan_idx].points.size()-1];
+            lslidar_c16_msgs::msg::LslidarC16Point& new_point =
+                    sweep_data.scans[remapped_scan_idx].points[
+                    sweep_data.scans[remapped_scan_idx].points.size()-1];
 
             // Pack the data into point msg
             new_point.time = time;
@@ -563,18 +572,18 @@ void LslidarC16Decoder::packetCallback(
 
     // A new sweep begins
     if (end_fir_idx != FIRINGS_PER_PACKET) {
-			//	ROS_WARN("A new sweep begins");
+			//	RCLCPP_WARN(node->get_logger(), "A new sweep begins");
 			// Publish the last revolution
-			sweep_data->header.frame_id = "sweep";
+			sweep_data.header.frame_id = "sweep";
 
 			if (use_gps_ts){
-		  	sweep_data->header.stamp = ros::Time(sweep_start_time);
+		  	sweep_data.header.stamp = rclcpp::Time(sweep_start_time);
 			}
 			else{
-		  	sweep_data->header.stamp = ros::Time(sweep_start_time);
+		  	sweep_data.header.stamp = rclcpp::Time(sweep_start_time);
 			}
 
-      sweep_pub.publish(sweep_data);
+      sweep_pub->publish(sweep_data);
 
       if (publish_point_cloud){
 				publishPointCloud();
@@ -583,7 +592,7 @@ void LslidarC16Decoder::packetCallback(
 				publishScan();
 			}
 
-      sweep_data = lslidar_c16_msgs::LslidarC16SweepPtr(new lslidar_c16_msgs::LslidarC16Sweep());			
+      sweep_data = lslidar_c16_msgs::msg::LslidarC16Sweep();
 
       last_azimuth = firings[FIRINGS_PER_PACKET-1].firing_azimuth;
 
@@ -592,13 +601,13 @@ void LslidarC16Decoder::packetCallback(
 
 			if(end_fir_idx-start_fir_idx>0)
 			{
-		  	sweep_start_time = msg->stamp.toSec() + FIRING_TOFFSET * (end_fir_idx-1-start_fir_idx) * 1e-6;
-				sweep_start_time_nsec = msg->stamp.toNSec() + (unsigned long)(FIRING_TOFFSET * (end_fir_idx-1-start_fir_idx) * 1000);
+		  	sweep_start_time = rclcpp::Time(msg.stamp).seconds() + FIRING_TOFFSET * (end_fir_idx-1-start_fir_idx) * 1e-6;
+				sweep_start_time_nsec = rclcpp::Time(msg.stamp).nanoseconds() + (unsigned long)(FIRING_TOFFSET * (end_fir_idx-1-start_fir_idx) * 1000);
 			}
 			else
 			{
-				sweep_start_time = msg->stamp.toSec() + FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1e-6;
-				sweep_start_time_nsec = msg->stamp.toNSec() + (unsigned long)(FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1000);
+				sweep_start_time = rclcpp::Time(msg.stamp).seconds() + FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1e-6;
+				sweep_start_time_nsec = rclcpp::Time(msg.stamp).nanoseconds() + (unsigned long)(FIRING_TOFFSET * (end_fir_idx-start_fir_idx) * 1000);
 			}
 
       start_fir_idx = end_fir_idx;
@@ -633,12 +642,12 @@ void LslidarC16Decoder::packetCallback(
 
             // Remap the index of the scan
             int remapped_scan_idx = scan_idx%2 == 0 ? scan_idx/2 : scan_idx/2+8;
-            sweep_data->scans[remapped_scan_idx].points.push_back(
-                        lslidar_c16_msgs::LslidarC16Point());
+            sweep_data.scans[remapped_scan_idx].points.push_back(
+                        lslidar_c16_msgs::msg::LslidarC16Point());
 
-            lslidar_c16_msgs::LslidarC16Point& new_point =
-                    sweep_data->scans[remapped_scan_idx].points[
-                    sweep_data->scans[remapped_scan_idx].points.size()-1];
+            lslidar_c16_msgs::msg::LslidarC16Point& new_point =
+                    sweep_data.scans[remapped_scan_idx].points[
+                    sweep_data.scans[remapped_scan_idx].points.size()-1];
 
             // Pack the data into point msg
             new_point.time = time;
@@ -652,7 +661,7 @@ void LslidarC16Decoder::packetCallback(
       }
 
     }
-    //  ROS_WARN("pack end");
+    //  RCLCPP_WARN(node->get_logger(), "pack end");
     return;
 	}
 

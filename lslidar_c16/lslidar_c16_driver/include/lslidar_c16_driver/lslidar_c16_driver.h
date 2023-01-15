@@ -25,12 +25,12 @@
 
 #include <boost/shared_ptr.hpp>
 
-#include <ros/ros.h>
-#include <diagnostic_updater/diagnostic_updater.h>
-#include <diagnostic_updater/publisher.h>
+#include <rclcpp/rclcpp.hpp>
+#include <diagnostic_updater/diagnostic_updater.hpp>
+#include <diagnostic_updater/publisher.hpp>
 
-#include <lslidar_c16_msgs/LslidarC16Packet.h>
-#include <lslidar_c16_msgs/LslidarC16ScanUnified.h>
+#include <lslidar_c16_msgs/msg/lslidar_c16_packet.hpp>
+#include <lslidar_c16_msgs/msg/lslidar_c16_scan_unified.hpp>
 
 namespace lslidar_c16_driver {
 
@@ -40,24 +40,21 @@ static uint16_t PACKET_SIZE = 1206;
 class LslidarC16Driver {
 public:
 
-    LslidarC16Driver(ros::NodeHandle& n, ros::NodeHandle& pn);
+    LslidarC16Driver(std::shared_ptr<rclcpp::Node> node);
     ~LslidarC16Driver();
 
     bool initialize();
     bool polling();
 
     void initTimeStamp(void);
-    void getFPGA_GPSTimeStamp(lslidar_c16_msgs::LslidarC16PacketPtr &packet);
-
-    typedef boost::shared_ptr<LslidarC16Driver> LslidarC16DriverPtr;
-    typedef boost::shared_ptr<const LslidarC16Driver> LslidarC16DriverConstPtr;
+    void getFPGA_GPSTimeStamp(lslidar_c16_msgs::msg::LslidarC16Packet& packet);
 
 private:
 
     bool loadParameters();
     bool createRosIO();
     bool openUDPPort();
-    int getPacket(lslidar_c16_msgs::LslidarC16PacketPtr& msg);
+    int getPacket(lslidar_c16_msgs::msg::LslidarC16Packet& msg);
 
     // Ethernet relate variables
     std::string lidar_ip_string;
@@ -69,9 +66,8 @@ private:
     bool use_gps_;
 	bool add_multicast;
     // ROS related variables
-    ros::NodeHandle nh;
-    ros::NodeHandle pnh;
-    ros::Publisher packet_pub;    
+    std::shared_ptr<rclcpp::Node> node;
+    rclcpp::Publisher<lslidar_c16_msgs::msg::LslidarC16Packet>::SharedPtr packet_pub;
 
     // Diagnostics updater
     diagnostic_updater::Updater diagnostics;
@@ -88,11 +84,8 @@ private:
     struct tm cur_time;
     unsigned short int us;
     unsigned short int ms;
-    ros::Time timeStamp;
+    rclcpp::Time timeStamp;
 };
-
-typedef LslidarC16Driver::LslidarC16DriverPtr LslidarC16DriverPtr;
-typedef LslidarC16Driver::LslidarC16DriverConstPtr LslidarC16DriverConstPtr;
 
 } // namespace lslidar_driver
 

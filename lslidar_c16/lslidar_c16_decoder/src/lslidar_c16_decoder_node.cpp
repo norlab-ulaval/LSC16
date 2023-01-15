@@ -15,24 +15,31 @@
  * along with the driver.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
 
 #include <lslidar_c16_decoder/lslidar_c16_decoder.h>
 
+class LSLidarC16DecoderNode : public rclcpp::Node
+{
+public:
+    LSLidarC16DecoderNode():
+            Node("lslidar_c16_decoder_node")
+    {
+    }
+};
+
 int main(int argc, char** argv) {
-    ros::init(argc, argv, "lslidar_c16_decoder_node");
-    ros::NodeHandle nh;
-    ros::NodeHandle pnh("~");
+    rclcpp::init(argc, argv);
+    std::shared_ptr<rclcpp::Node> node = std::make_shared<LSLidarC16DecoderNode>();
 
-    lslidar_c16_decoder::LslidarC16DecoderPtr decoder(
-                new lslidar_c16_decoder::LslidarC16Decoder(nh, pnh));
+    lslidar_c16_decoder::LslidarC16Decoder decoder(node);
 
-    if (!decoder->initialize()) {
-        ROS_INFO("Cannot initialize the decoder...");
+    if (!decoder.initialize()) {
+        RCLCPP_INFO(node->get_logger(), "Cannot initialize the decoder...");
         return -1;
     }
 
-  ros::spin();
+    rclcpp::spin(node);
 
     return 0;
 }

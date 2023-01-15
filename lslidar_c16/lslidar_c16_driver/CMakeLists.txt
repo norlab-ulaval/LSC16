@@ -1,86 +1,34 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.8)
 project(lslidar_c16_driver)
 
-add_definitions(-std=c++0x)
-
-
-find_package(catkin REQUIRED COMPONENTS
-  roscpp
-  diagnostic_updater
-  nodelet
-
-  lslidar_c16_msgs
-)
-
-find_package(Boost REQUIRED)
-
-catkin_package(
-  INCLUDE_DIRS include
-#  LIBRARIES lslidar_c16_driver
-  CATKIN_DEPENDS
-    roscpp diagnostic_updater nodelet
-    lslidar_c16_msgs
-  DEPENDS
-    boost
-)
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(lslidar_c16_msgs REQUIRED)
+find_package(diagnostic_updater REQUIRED)
 
 include_directories(
   include
-  ${Boost_INCLUDE_DIR}
-  ${catkin_INCLUDE_DIRS}
 )
 
-link_directories(
-  ${catkin_LIBRARY_DIRS}
+add_library(lslidar_c16_driver src/lslidar_c16_driver.cc)
+ament_target_dependencies(lslidar_c16_driver
+  rclcpp
+  tf2_ros
+  lslidar_c16_msgs
+  diagnostic_updater
 )
 
-# Leishen c16 lidar driver
-add_library(lslidar_c16_driver
-  src/lslidar_c16_driver.cc
-)
-target_link_libraries(lslidar_c16_driver
-  ${catkin_LIBRARIES}
-)
-add_dependencies(lslidar_c16_driver
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
-)
-
-# Leishen c16 lidar nodelet
-add_executable(lslidar_c16_driver_node
-  src/lslidar_c16_driver_node.cc
-)
+add_executable(lslidar_c16_driver_node src/lslidar_c16_driver_node.cc)
 target_link_libraries(lslidar_c16_driver_node
   lslidar_c16_driver
-  ${catkin_LIBRARIES}
-)
-add_dependencies(lslidar_c16_driver_node
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
 )
 
-# Leishen c16 lidar nodelet
-add_library(lslidar_c16_driver_nodelet
-  src/lslidar_c16_driver_nodelet.cc
-)
-target_link_libraries(lslidar_c16_driver_nodelet
-  lslidar_c16_driver
-  ${catkin_LIBRARIES}
-)
-add_dependencies(lslidar_c16_driver_nodelet
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
+install(TARGETS lslidar_c16_driver_node
+  DESTINATION lib/${PROJECT_NAME}
 )
 
+install(DIRECTORY launch
+        DESTINATION share/${PROJECT_NAME})
 
-# install options
-# install(TARGETS lslidar_c16_driver_node
-#   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-#   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-#   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
-
-# install(DIRECTORY launch
-#         DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-# )
-
+ament_package()

@@ -26,21 +26,19 @@
 #include <string>
 #include <boost/shared_ptr.hpp>
 
-#include <ros/ros.h>
-#include <sensor_msgs/PointCloud2.h>
-#include <sensor_msgs/LaserScan.h>
-#include <std_msgs/Int8.h>
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <sensor_msgs/msg/laser_scan.hpp>
+#include <std_msgs/msg/int8.hpp>
 #include <pcl_conversions/pcl_conversions.h>
-#include <pcl_ros/point_cloud.h>
 #include <pcl/point_types.h>
-#include <sensor_msgs/point_cloud2_iterator.h>
+#include <sensor_msgs/point_cloud2_iterator.hpp>
 
-#include <lslidar_c16_msgs/LslidarC16Packet.h>
-#include <lslidar_c16_msgs/LslidarC16Point.h>
-#include <lslidar_c16_msgs/LslidarC16Scan.h>
-#include <lslidar_c16_msgs/LslidarC16Sweep.h>
-#include <lslidar_c16_msgs/LslidarC16Layer.h>
-
+#include <lslidar_c16_msgs/msg/lslidar_c16_packet.hpp>
+#include <lslidar_c16_msgs/msg/lslidar_c16_point.hpp>
+#include <lslidar_c16_msgs/msg/lslidar_c16_scan.hpp>
+#include <lslidar_c16_msgs/msg/lslidar_c16_sweep.hpp>
+#include <lslidar_c16_msgs/msg/lslidar_c16_layer.hpp>
 
 namespace lslidar_c16_decoder {
 
@@ -128,15 +126,12 @@ struct PointXYZITR {
 class LslidarC16Decoder {
 public:
 
-    LslidarC16Decoder(ros::NodeHandle& n, ros::NodeHandle& pn);
+    LslidarC16Decoder(std::shared_ptr<rclcpp::Node> node);
     LslidarC16Decoder(const LslidarC16Decoder&) = delete;
     LslidarC16Decoder operator=(const LslidarC16Decoder&) = delete;
     ~LslidarC16Decoder() {return;}
 
     bool initialize();
-
-    typedef boost::shared_ptr<LslidarC16Decoder> LslidarC16DecoderPtr;
-    typedef boost::shared_ptr<const LslidarC16Decoder> LslidarC16DecoderConstPtr;
 
 private:
 
@@ -173,8 +168,8 @@ private:
     // Callback function for a single lslidar packet.
     bool checkPacketValidity(const RawPacket* packet);
     void decodePacket(const RawPacket* packet);
-    void layerCallback(const std_msgs::Int8Ptr& msg);
-    void packetCallback(const lslidar_c16_msgs::LslidarC16PacketConstPtr& msg);
+    void layerCallback(const std_msgs::msg::Int8& msg);
+    void packetCallback(const lslidar_c16_msgs::msg::LslidarC16Packet& msg);
     // Publish data
     void publishPointCloud();
     void publishChannelScan();
@@ -223,27 +218,24 @@ private:
     Firing firings[FIRINGS_PER_PACKET];
 
     // ROS related parameters
-    ros::NodeHandle nh;
-    ros::NodeHandle pnh;
+    std::shared_ptr<rclcpp::Node> node;
 
     //std::string fixed_frame_id;
     std::string frame_id;
 
-    lslidar_c16_msgs::LslidarC16SweepPtr sweep_data;
-    lslidar_c16_msgs::LslidarC16LayerPtr multi_scan;
-    sensor_msgs::PointCloud2 point_cloud_data;
+    lslidar_c16_msgs::msg::LslidarC16Sweep sweep_data;
+    lslidar_c16_msgs::msg::LslidarC16Layer multi_scan;
+    sensor_msgs::msg::PointCloud2 point_cloud_data;
 
-    ros::Subscriber packet_sub;
-    ros::Subscriber layer_sub;
-    ros::Publisher sweep_pub;
-    ros::Publisher point_cloud_pub;
-    ros::Publisher scan_pub;
-    ros::Publisher channel_scan_pub;
+    rclcpp::Subscription<lslidar_c16_msgs::msg::LslidarC16Packet>::SharedPtr packet_sub;
+    rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr layer_sub;
+    rclcpp::Publisher<lslidar_c16_msgs::msg::LslidarC16Sweep>::SharedPtr sweep_pub;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr point_cloud_pub;
+    rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr scan_pub;
+    rclcpp::Publisher<lslidar_c16_msgs::msg::LslidarC16Layer>::SharedPtr channel_scan_pub;
 
 };
 
-typedef LslidarC16Decoder::LslidarC16DecoderPtr LslidarC16DecoderPtr;
-typedef LslidarC16Decoder::LslidarC16DecoderConstPtr LslidarC16DecoderConstPtr;
 typedef PointXYZITR VPoint;
 typedef pcl::PointCloud<VPoint> VPointCloud;
 

@@ -15,26 +15,33 @@
  * along with the driver.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
 #include <lslidar_c16_driver/lslidar_c16_driver.h>
+
+class LSLidarC16DriverNode : public rclcpp::Node
+{
+public:
+    LSLidarC16DriverNode():
+            Node("lslidar_c16_driver_node")
+    {
+    }
+};
 
 int main(int argc, char** argv)
 {
-    ros::init(argc, argv, "lslidar_c16_driver_node");
-    ros::NodeHandle node;
-    ros::NodeHandle private_nh("~");
+    rclcpp::init(argc, argv);
+    std::shared_ptr<rclcpp::Node> node = std::make_shared<LSLidarC16DriverNode>();
 
     // start the driver
-    ROS_INFO("namespace is %s", private_nh.getNamespace().c_str());
-    lslidar_c16_driver::LslidarC16Driver driver(node, private_nh);
+    RCLCPP_INFO(node->get_logger(), "namespace is %s", node->get_namespace());
+    lslidar_c16_driver::LslidarC16Driver driver(node);
   if (!driver.initialize()) {
-    ROS_ERROR("Cannot initialize lslidar driver...");
+    RCLCPP_ERROR(node->get_logger(), "Cannot initialize lslidar driver...");
     return 0;
   }
     // loop until shut down or end of file
-    while(ros::ok() && driver.polling()) {
-        ros::spinOnce();
-
+    while(rclcpp::ok() && driver.polling()) {
+        rclcpp::spin_some(node);
     }
 
     return 0;

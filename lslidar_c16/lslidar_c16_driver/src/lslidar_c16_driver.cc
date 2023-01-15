@@ -25,17 +25,16 @@
 #include <fcntl.h>
 #include <sys/file.h>
 
-#include <ros/ros.h>
-#include <tf/transform_listener.h>
+#include <rclcpp/rclcpp.hpp>
+#include <tf2_ros/transform_listener.h>
 
 #include <lslidar_c16_driver/lslidar_c16_driver.h>
 
 namespace lslidar_c16_driver {
 
-LslidarC16Driver::LslidarC16Driver(
-        ros::NodeHandle& n, ros::NodeHandle& pn):
-    nh(n),
-    pnh(pn),
+LslidarC16Driver::LslidarC16Driver(std::shared_ptr<rclcpp::Node> node):
+    node(node),
+    diagnostics(node),
     socket_id(-1){
     return;
 }
@@ -48,14 +47,18 @@ LslidarC16Driver::~LslidarC16Driver() {
 bool LslidarC16Driver::loadParameters() {
 
   //pnh.param("frame_id", frame_id, std::string("lslidar"));
-  pnh.param("lidar_ip", lidar_ip_string, std::string("192.168.1.222"));
-  pnh.param<int>("device_port", UDP_PORT_NUMBER,2368);
-  pnh.param<bool>("add_multicast", add_multicast, false);
-  pnh.param("group_ip", group_ip_string, std::string("234.2.3.2"));
+  node->declare_parameter<std::string>("lidar_ip", std::string("192.168.1.222"));
+  node->get_parameter("lidar_ip", lidar_ip_string);
+  node->declare_parameter<int>("device_port", 2368);
+  node->get_parameter("device_port", UDP_PORT_NUMBER);
+  node->declare_parameter<bool>("add_multicast", false);
+  node->get_parameter("add_multicast", add_multicast);
+  node->declare_parameter<std::string>("group_ip", std::string("234.2.3.2"));
+  node->get_parameter("group_ip", group_ip_string);
   inet_aton(lidar_ip_string.c_str(), &lidar_ip);
-  ROS_INFO_STREAM("Opening UDP socket: address " << lidar_ip_string);
-  if(add_multicast) ROS_INFO_STREAM("Opening UDP socket: group_address " << group_ip_string);
-  ROS_INFO_STREAM("Opening UDP socket: port " << UDP_PORT_NUMBER);
+  RCLCPP_INFO_STREAM(node->get_logger(), "Opening UDP socket: address " << lidar_ip_string);
+  if(add_multicast) RCLCPP_INFO_STREAM(node->get_logger(), "Opening UDP socket: group_address " << group_ip_string);
+  RCLCPP_INFO_STREAM(node->get_logger(), "Opening UDP socket: port " << UDP_PORT_NUMBER);
   return true;
 }
 
@@ -70,7 +73,7 @@ bool LslidarC16Driver::createRosIO() {
   const double diag_freq = 16*20000.0 / (12*32);
   diag_max_freq = diag_freq;
   diag_min_freq = diag_freq;
-  ROS_INFO("expected frequency: %.3f (Hz)", diag_freq);
+  RCLCPP_INFO(node->get_logger(), "expected frequency: %.3f (Hz)", diag_freq);
 
     using namespace diagnostic_updater;
     diag_topic.reset(new TopicDiagnostic(
@@ -79,8 +82,7 @@ bool LslidarC16Driver::createRosIO() {
                          TimeStampStatusParam()));
 
     // Output
-    packet_pub = nh.advertise<lslidar_c16_msgs::LslidarC16Packet>(
-                "lslidar_packet", 100);
+    packet_pub = node->create_publisher<lslidar_c16_msgs::msg::LslidarC16Packet>("lslidar_packet", 100);
     return true;
 }
 
@@ -95,11 +97,11 @@ bool LslidarC16Driver::openUDPPort() {
     memset(&my_addr, 0, sizeof(my_addr));    // initialize to zeros
     my_addr.sin_family = AF_INET;            // host byte order
     my_addr.sin_port = htons(UDP_PORT_NUMBER);      // short, in network byte order
-  ROS_INFO_STREAM("Opening UDP socket: port " << UDP_PORT_NUMBER);
+  RCLCPP_INFO_STREAM(node->get_logger(), "Opening UDP socket: port " << UDP_PORT_NUMBER);
     my_addr.sin_addr.s_addr = INADDR_ANY;    // automatically fill in my IP
 
     if (bind(socket_id, (sockaddr *)&my_addr, sizeof(sockaddr)) == -1) {
-        perror("bind");                 // TODO: ROS_ERROR errno
+        perror("bind");                 // TODO: RCLCPP_ERROR errno
         return false;
     }
     //add multicast
@@ -127,27 +129,26 @@ bool LslidarC16Driver::initialize() {
     this->initTimeStamp();
 
     if (!loadParameters()) {
-        ROS_ERROR("Cannot load all required ROS parameters...");
+        RCLCPP_ERROR(node->get_logger(), "Cannot load all required ROS parameters...");
         return false;
     }
 
     if (!createRosIO()) {
-        ROS_ERROR("Cannot create all ROS IO...");
+        RCLCPP_ERROR(node->get_logger(), "Cannot create all ROS IO...");
         return false;
     }
 
     if (!openUDPPort()) {
-        ROS_ERROR("Cannot open UDP port...");
+        RCLCPP_ERROR(node->get_logger(), "Cannot open UDP port...");
         return false;
     }
-    ROS_INFO("Initialised lslidar c16 without error");
+    RCLCPP_INFO(node->get_logger(), "Initialised lslidar c16 without error");
     return true;
 }
 
-int LslidarC16Driver::getPacket(
-        lslidar_c16_msgs::LslidarC16PacketPtr& packet) {
+int LslidarC16Driver::getPacket(lslidar_c16_msgs::msg::LslidarC16Packet& packet) {
 
-    double time1 = ros::Time::now().toSec();
+    double time1 = node->get_clock()->now().seconds();
 
     struct pollfd fds[1];
     fds[0].fd = socket_id;
@@ -157,7 +158,7 @@ int LslidarC16Driver::getPacket(
     sockaddr_in sender_address;
     socklen_t sender_address_len = sizeof(sender_address);
 
-    while (true)
+    while (rclcpp::ok())
     {
         // Unfortunately, the Linux kernel recvfrom() implementation
         // uses a non-interruptible sleep() when waiting for data,
@@ -182,29 +183,29 @@ int LslidarC16Driver::getPacket(
             if (retval < 0)             // poll() error?
             {
                 if (errno != EINTR)
-                    ROS_ERROR("poll() error: %s", strerror(errno));
+                    RCLCPP_ERROR(node->get_logger(), "poll() error: %s", strerror(errno));
                 return 1;
             }
             if (retval == 0)            // poll() timeout?
             {
-                ROS_WARN("lslidar poll() timeout");
+                RCLCPP_WARN(node->get_logger(), "lslidar poll() timeout");
                 return 1;
             }
             if ((fds[0].revents & POLLERR)
                     || (fds[0].revents & POLLHUP)
                     || (fds[0].revents & POLLNVAL)) // device error?
             {
-                ROS_ERROR("poll() reports lslidar error");
+                RCLCPP_ERROR(node->get_logger(), "poll() reports lslidar error");
                 return 1;
             }
         } while ((fds[0].revents & POLLIN) == 0);
 
         // Receive packets that should now be available from the
         // socket using a blocking read.
-        ssize_t nbytes = recvfrom(socket_id, &packet->data[0], PACKET_SIZE,  0,
+        ssize_t nbytes = recvfrom(socket_id, &packet.data[0], PACKET_SIZE,  0,
                 (sockaddr*) &sender_address, &sender_address_len);
 
-//        ROS_DEBUG_STREAM("incomplete lslidar packet read: "
+//        RCLCPP_DEBUG_STREAM(node->get_logger(), "incomplete lslidar packet read: "
 //                         << nbytes << " bytes");
 
         if (nbytes < 0)
@@ -212,7 +213,7 @@ int LslidarC16Driver::getPacket(
             if (errno != EWOULDBLOCK)
             {
                 perror("recvfail");
-                ROS_INFO("recvfail");
+                RCLCPP_INFO(node->get_logger(), "recvfail");
                 return 1;
             }
         }
@@ -234,18 +235,16 @@ int LslidarC16Driver::getPacket(
 
     // Average the times at which we begin and end reading.  Use that to
     // estimate when the scan occurred.
-    double time2 = ros::Time::now().toSec();
+    double time2 = node->get_clock()->now().seconds();
 //    packet->stamp = ros::Time((time2 + time1) / 2.0);
     //packet->stamp = this->timeStamp;
-		packet->stamp = ros::Time::now();
+		packet.stamp = node->get_clock()->now();
     return 0;
 }
 
 bool LslidarC16Driver::polling()
 {
-    // Allocate a new shared pointer for zero-copy sharing with other nodelets.
-    lslidar_c16_msgs::LslidarC16PacketPtr packet(
-                new lslidar_c16_msgs::LslidarC16Packet());
+    lslidar_c16_msgs::msg::LslidarC16Packet packet;
 
     // Since the lslidar delivers data at a very high rate, keep
     // reading and publishing scans as fast as possible.
@@ -268,13 +267,13 @@ bool LslidarC16Driver::polling()
     }
 
     // publish message using time of last packet read
-    ROS_DEBUG("Publishing a full lslidar scan.");
-    packet_pub.publish(*packet);
+    RCLCPP_DEBUG(node->get_logger(), "Publishing a full lslidar scan.");
+    packet_pub->publish(packet);
 
     // notify diagnostics that a message has been published, updating
     // its status
-    diag_topic->tick(packet->stamp);
-    diagnostics.update();
+    diag_topic->tick(packet.stamp);
+    diagnostics.force_update();
 
     return true;
 }
@@ -289,23 +288,23 @@ void LslidarC16Driver::initTimeStamp(void)
     }
     this->pointcloudTimeStamp = 0;
 
-    this->timeStamp = ros::Time(0.0);
+    this->timeStamp = rclcpp::Time(0.0);
 }
 
-void LslidarC16Driver::getFPGA_GPSTimeStamp(lslidar_c16_msgs::LslidarC16PacketPtr &packet)
+void LslidarC16Driver::getFPGA_GPSTimeStamp(lslidar_c16_msgs::msg::LslidarC16Packet& packet)
 {
-    unsigned char head2[] = {packet->data[0],packet->data[1],packet->data[2],packet->data[3]};
+    unsigned char head2[] = {packet.data[0],packet.data[1],packet.data[2],packet.data[3]};
 
     if(head2[0] == 0xA5 && head2[1] == 0xFF)
     {
         if(head2[2] == 0x00 && head2[3] == 0x5A)
         {
-            this->packetTimeStamp[4] = packet->data[41];
-            this->packetTimeStamp[5] = packet->data[40];
-            this->packetTimeStamp[6] = packet->data[39];
-            this->packetTimeStamp[7] = packet->data[38];
-            this->packetTimeStamp[8] = packet->data[37];
-            this->packetTimeStamp[9] = packet->data[36];
+            this->packetTimeStamp[4] = packet.data[41];
+            this->packetTimeStamp[5] = packet.data[40];
+            this->packetTimeStamp[6] = packet.data[39];
+            this->packetTimeStamp[7] = packet.data[38];
+            this->packetTimeStamp[8] = packet.data[37];
+            this->packetTimeStamp[9] = packet.data[36];
 
             cur_time.tm_sec = this->packetTimeStamp[4];
             cur_time.tm_min = this->packetTimeStamp[5];
@@ -328,31 +327,31 @@ void LslidarC16Driver::getFPGA_GPSTimeStamp(lslidar_c16_msgs::LslidarC16PacketPt
             {
                 cnt_gps_ts ++;
             }
-//            ROS_DEBUG("GPS: y:%d m:%d d:%d h:%d m:%d s:%d",
+//            RCLCPP_DEBUG(node->get_logger(), "GPS: y:%d m:%d d:%d h:%d m:%d s:%d",
 //                      cur_time.tm_year,cur_time.tm_mon,cur_time.tm_mday,cur_time.tm_hour,cur_time.tm_min,cur_time.tm_sec);
         }
     }
     else if(head2[0] == 0xFF && head2[1] == 0xEE)
     {
         uint64_t packet_timestamp;
-        packet_timestamp = (packet->data[1200]  +
-                            packet->data[1201] * pow(2, 8) +
-                            packet->data[1202] * pow(2, 16) +
-                            packet->data[1203] * pow(2, 24)) * 1e3;
+        packet_timestamp = (packet.data[1200]  +
+                            packet.data[1201] * pow(2, 8) +
+                            packet.data[1202] * pow(2, 16) +
+                            packet.data[1203] * pow(2, 24)) * 1e3;
 
 
         if ((last_FPGA_ts - packet_timestamp) > 0)
         {
             GPS_ts = GPSStableTS;
 
-           // ROS_DEBUG("This is step time, using new GPS ts %lu", GPS_ts);
+           // RCLCPP_DEBUG(node->get_logger(), "This is step time, using new GPS ts %lu", GPS_ts);
         }
 
         last_FPGA_ts = packet_timestamp;
-        // timeStamp = ros::Time(this->pointcloudTimeStamp+total_us/10e5);
+        // timeStamp = rclcpp::Time(this->pointcloudTimeStamp+total_us/10e5);
 
-        timeStamp = ros::Time(GPS_ts, packet_timestamp);
-//        ROS_DEBUG("ROS TS: %f, GPS: y:%d m:%d d:%d h:%d m:%d s:%d; FPGA: us:%lu",
+        timeStamp = rclcpp::Time(GPS_ts, packet_timestamp);
+//        RCLCPP_DEBUG(node->get_logger(), "ROS TS: %f, GPS: y:%d m:%d d:%d h:%d m:%d s:%d; FPGA: us:%lu",
 //                  timeStamp.toSec(), GPS_ts, packet_timestamp);
 
     }

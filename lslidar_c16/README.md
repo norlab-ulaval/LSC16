@@ -3,6 +3,9 @@
 ## version track
 Author: Yutong
 
+### ver2.0 Simon-Pierre Deschênes
+Ported to ROS 2
+
 ### ver1.2 Yutong
 1. Add group multicast function
 2. Add truncate 3D angle area data
@@ -27,15 +30,15 @@ details: send layer number to topic layer_num
 Usage: rostopic pub /layer_num std_msgs/Int8 "data: 5"  --> output channel 5 data to topic /scan, message type is sensor_msgs/LaserScan . data number can only from 0 to 15
 
 ## Description
-The `lslidar_c16` package is a linux ROS driver for lslidar c16.
-The package is tested on Ubuntu 14.04 with ROS indigo.
+The `lslidar_c16` package is a linux ROS 2 driver for lslidar c16.
+The package is tested on Ubuntu 22.04 with ROS 2 humble.
 
 ## Compling
-This is a Catkin package. Make sure the package is on `ROS_PACKAGE_PATH` after cloning the package to your workspace. And the normal procedure for compling a catkin package will work.
+This is a colcon package. The normal procedure for compling a colcon package will work.
 
 ```
 cd your_work_space
-catkin_make 
+colcon build 
 ```
 
 ## Example Usage
@@ -89,21 +92,14 @@ This is only published when the `publish_point_cloud` is set to `true` in the la
 **Node**
 
 ```
-roslaunch lslidar_c16_decoder lslidar_c16.launch --screen
+ros2 launch lslidar_c16_decoder lslidar_c16.launch.xml
 ```
 
 Note that this launch file launches both the driver and the decoder, which is the only launch file needed to be used.
 
 
 ## FAQ
-If the driver compilation of 2019.9.19 fails, execute
+If the driver compilation fails, execute
 sudo apt-get install libpcap-dev
 
 ## Bug Report
-
-
-
-
-
-
-

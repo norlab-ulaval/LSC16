@@ -1,27 +1,21 @@
-<package>
-
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
   <name>lslidar_c16_driver</name>
   <version>1.2.0</version>
-  <description>
-    ROS device driver for Leishen C16 lidar.
-  </description>
+  <description>ROS2 device driver for Leishen C16 lidar.</description>
   <maintainer email="yutongyan@lslidar.com">Yutong</maintainer>
   <author>Yutong</author>
   <license>GNU General Public License V3.0</license>
 
-  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <build_depend>diagnostic_updater</build_depend>
-  <build_depend>nodelet</build_depend>
-  <build_depend>roscpp</build_depend>
-  <build_depend>lslidar_c16_msgs</build_depend>
+  <depend>rclcpp</depend>
+  <depend>tf2_ros</depend>
+  <depend>lslidar_c16_msgs</depend>
+  <depend>diagnostic_updater</depend>
 
-  <run_depend>diagnostic_updater</run_depend>
-  <run_depend>nodelet</run_depend>
-  <run_depend>roscpp</run_depend>
-  <run_depend>lslidar_c16_msgs</run_depend>
-
- <export>
-    <nodelet plugin="${prefix}/nodelet_lslidar_c16.xml"/>
+  <export>
+    <build_type>ament_cmake</build_type>
   </export>
 </package>
