@@ -78,13 +78,10 @@ private:
     uint64_t pointcloudTimeStamp;
     uint64_t GPSStableTS;
     uint64_t GPSCountingTS;
-    uint64_t last_FPGA_ts;
-    uint64_t GPS_ts;
     unsigned char packetTimeStamp[10];
     struct tm cur_time;
     unsigned short int us;
     unsigned short int ms;
-    rclcpp::Time timeStamp;
 };
 
 } // namespace lslidar_driver

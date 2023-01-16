@@ -237,7 +237,6 @@ int LslidarC16Driver::getPacket(lslidar_c16_msgs::msg::LslidarC16Packet& packet)
     // estimate when the scan occurred.
     double time2 = node->get_clock()->now().seconds();
 //    packet->stamp = ros::Time((time2 + time1) / 2.0);
-    //packet->stamp = this->timeStamp;
 		packet.stamp = node->get_clock()->now();
     return 0;
 }
@@ -287,8 +286,6 @@ void LslidarC16Driver::initTimeStamp(void)
         this->packetTimeStamp[i] = 0;
     }
     this->pointcloudTimeStamp = 0;
-
-    this->timeStamp = rclcpp::Time(0.0);
 }
 
 void LslidarC16Driver::getFPGA_GPSTimeStamp(lslidar_c16_msgs::msg::LslidarC16Packet& packet)
@@ -330,30 +327,6 @@ void LslidarC16Driver::getFPGA_GPSTimeStamp(lslidar_c16_msgs::msg::LslidarC16Pac
 //            RCLCPP_DEBUG(node->get_logger(), "GPS: y:%d m:%d d:%d h:%d m:%d s:%d",
 //                      cur_time.tm_year,cur_time.tm_mon,cur_time.tm_mday,cur_time.tm_hour,cur_time.tm_min,cur_time.tm_sec);
         }
-    }
-    else if(head2[0] == 0xFF && head2[1] == 0xEE)
-    {
-        uint64_t packet_timestamp;
-        packet_timestamp = (packet.data[1200]  +
-                            packet.data[1201] * pow(2, 8) +
-                            packet.data[1202] * pow(2, 16) +
-                            packet.data[1203] * pow(2, 24)) * 1e3;
-
-
-        if ((last_FPGA_ts - packet_timestamp) > 0)
-        {
-            GPS_ts = GPSStableTS;
-
-           // RCLCPP_DEBUG(node->get_logger(), "This is step time, using new GPS ts %lu", GPS_ts);
-        }
-
-        last_FPGA_ts = packet_timestamp;
-        // timeStamp = rclcpp::Time(this->pointcloudTimeStamp+total_us/10e5);
-
-        timeStamp = rclcpp::Time(GPS_ts, packet_timestamp);
-//        RCLCPP_DEBUG(node->get_logger(), "ROS TS: %f, GPS: y:%d m:%d d:%d h:%d m:%d s:%d; FPGA: us:%lu",
-//                  timeStamp.toSec(), GPS_ts, packet_timestamp);
-
     }
 }
 
