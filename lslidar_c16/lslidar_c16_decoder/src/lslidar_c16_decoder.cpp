@@ -144,7 +144,7 @@ void LslidarC16Decoder::publishPointCloud() {
     outMsg.header.stamp = static_cast<rclcpp::Time>(sweep_start_time * 1e6);
   }
   else{
-    outMsg.header.stamp = static_cast<rclcpp::Time>(sweep_start_time);    //timestamp of the first scan receive from sweep topic
+    outMsg.header.stamp = rclcpp::Time(sweep_start_time_nsec);    //timestamp of the first scan receive from sweep topic
   }
   
 	int height;
