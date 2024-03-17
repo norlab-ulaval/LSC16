@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(lslidar_c16_driver)
 
-add_definitions(-std=c++0x)
-
+# Set C++14 standard
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
